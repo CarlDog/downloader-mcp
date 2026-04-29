@@ -60,6 +60,22 @@ docker run -i --rm \
   downloader-mcp
 ```
 
+## Published image
+
+After each push to `main`, GitHub Actions builds and pushes a multi-arch
+image to GHCR:
+
+`ghcr.io/carldog/downloader-mcp:latest` (linux/amd64 + linux/arm64)
+
+Pull instead of building locally:
+
+```bash
+docker pull ghcr.io/carldog/downloader-mcp:latest
+docker run -i --rm \
+  -e SABNZBD_URL=... -e SABNZBD_API_KEY=... \
+  ghcr.io/carldog/downloader-mcp:latest
+```
+
 ## Use with Claude Desktop
 
 Add to your `claude_desktop_config.json`:
