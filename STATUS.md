@@ -4,7 +4,8 @@
 
 ## Phase
 
-Scaffolding — initial repo structure created, build verification pending.
+Scaffolded — code builds, deps resolved, repo published, MCP tooling
+wired. Pending live smoke test against real SABnzbd and qBittorrent.
 
 ## Done
 
@@ -21,17 +22,26 @@ Scaffolding — initial repo structure created, build verification pending.
   (gitleaks + PII pattern scan from the start)
 - Project docs: CLAUDE.md, STATUS.md, README.md
 
+## Done (post-scaffold)
+
+- `npm install` + `tsc` clean. SDK and zod resolved cleanly; all 4
+  dist outputs produced (index, util, sabnzbd, qbittorrent). 0 vulns.
+- Public repo published at https://github.com/CarlDog/downloader-mcp
+  with a no-PII commit author (CarlDog noreply).
+- Serena project activated; five memories written (`project_overview`,
+  `structure`, `suggested_commands`, `conventions`, `task_completion`).
+  Memories are workstation-neutral from the start.
+- OpenChronicle MCP server registered local-scope for this directory
+  (`claude mcp add openchronicle -- oc mcp serve`).
+
 ## Next
 
-- `npm install` and verify `npm run build` succeeds
 - Smoke-test against real SABnzbd and qBittorrent instances; confirm
   at least one tool per client returns sensible JSON. qBittorrent's
   login flow is the highest-risk path — verify session cookie handling
   works against a real WebUI.
 - Build the Docker image and verify `docker run -i` connects via stdio
-- Commit + push to GitHub (under CarlDog, public, no-PII commit author)
-- Configure Serena project + onboarding memories
-- Register OpenChronicle MCP locally for this directory
+- Wire into Claude Desktop config and verify tool calls flow through
 - After smoke test passes: decide on writes (pause/resume/delete/add).
   Currently out of scope.
 
