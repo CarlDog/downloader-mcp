@@ -48,6 +48,34 @@ optional registration in `src/index.ts` — no inheritance refactor.
 - `Dockerfile` — multi-stage build (alpine, non-root user).
 - `.githooks/pre-commit` — gitleaks + PII pattern scan.
 
+## When to add a `tools/` layer
+
+Today each client's API class and its MCP tool registrations live in
+the same file (`src/sabnzbd.ts`, `src/qbittorrent.ts`). That's
+idiomatic when each tool is a thin wrapper over a single API call.
+
+**Trigger to refactor:** the first tool that doesn't fit cleanly in any
+existing client file. Concretely:
+
+- A tool that **orchestrates across both clients** — e.g. a unified
+  "downloads_summary" that merges SABnzbd queue + qBittorrent torrents
+  into one normalized view.
+- A tool that does **non-trivial composition** of multiple upstream
+  calls — cross-references, ranking, filtering beyond what either
+  API exposes natively.
+
+When that moment arrives:
+
+1. Create `src/tools/<descriptive-name>.ts` for the cross-cutting tool.
+2. Pull existing per-client `register<Client>Tools` functions into
+   `src/tools/<client>.ts` for symmetry. Each `src/<client>.ts` then
+   holds just the client class.
+3. Mechanical refactor.
+
+Don't pre-split before that trigger. Three similar lines is better than
+a premature abstraction — and the right split shape is easier to see
+once the first orchestration tool exists than before.
+
 ## Common Commands
 
 ```bash
