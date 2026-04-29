@@ -6,15 +6,11 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
-import {
-  QBittorrentClient,
-  registerQbittorrentTools,
-} from "./qbittorrent.js";
+import { QBittorrentClient, registerQbittorrentTools } from "./qbittorrent.js";
 
 const sabUrl = process.env.SABNZBD_URL;
 const sabKey = process.env.SABNZBD_API_KEY;
-const sabConfig =
-  sabUrl && sabKey ? { url: sabUrl, apiKey: sabKey } : null;
+const sabConfig = sabUrl && sabKey ? { url: sabUrl, apiKey: sabKey } : null;
 
 const qbtUrl = process.env.QBITTORRENT_URL;
 const qbtUser = process.env.QBITTORRENT_USERNAME;

@@ -50,9 +50,7 @@ export class QBittorrentClient {
     }
     const text = await res.text();
     if (text.trim() !== "Ok.") {
-      throw new Error(
-        `qBittorrent login rejected: ${text.slice(0, 100)}`,
-      );
+      throw new Error(`qBittorrent login rejected: ${text.slice(0, 100)}`);
     }
     const setCookie = res.headers.get("set-cookie");
     if (!setCookie) {
