@@ -1,0 +1,21 @@
+services:
+  downloader-mcp:
+    image: ghcr.io/carldog/downloader-mcp:latest
+    pull_policy: always
+    container_name: downloader-mcp
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3003}:3000"
+    environment:
+      MCP_PORT: "3000"
+      SABNZBD_URL: "${SABNZBD_URL:-}"
+      SABNZBD_API_KEY: "${SABNZBD_API_KEY:-}"
+      QBITTORRENT_URL: "${QBITTORRENT_URL:-}"
+      QBITTORRENT_USERNAME: "${QBITTORRENT_USERNAME:-}"
+      QBITTORRENT_PASSWORD: "${QBITTORRENT_PASSWORD:-}"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

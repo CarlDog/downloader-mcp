@@ -4,8 +4,10 @@
 
 ## Phase
 
-Scaffolded — code builds, deps resolved, repo published, MCP tooling
-wired. Pending live smoke test against real SABnzbd and qBittorrent.
+HTTP transport added (matching the plex-mcp pilot). Same image now
+supports stdio and Streamable HTTP, selected by the `MCP_PORT` env var.
+`docker-compose.yml` added for Portainer/Compose deployment. Pending
+live smoke test of HTTP path against real SABnzbd and qBittorrent.
 
 ## Done
 
@@ -33,15 +35,26 @@ wired. Pending live smoke test against real SABnzbd and qBittorrent.
   Memories are workstation-neutral from the start.
 - OpenChronicle MCP server registered local-scope for this directory
   (`claude mcp add openchronicle -- oc mcp serve`).
+- **Dual transport:** stdio (default) + Streamable HTTP (when `MCP_PORT`
+  set). Per-session `McpServer` factory; `/mcp` endpoint with session-id
+  header; `/health` for docker healthcheck (reports enabled clients).
+  Express dependency added.
+- **Compose deploy:** `docker-compose.yml` with HTTP transport on port
+  `${HOST_PORT:-3003}:3000`, env passthrough for `SABNZBD_*` and
+  `QBITTORRENT_*` vars, healthcheck via wget. Pulls
+  `ghcr.io/carldog/downloader-mcp:latest`.
 
 ## Next
 
-- Smoke-test against real SABnzbd and qBittorrent instances; confirm
-  at least one tool per client returns sensible JSON. qBittorrent's
-  login flow is the highest-risk path — verify session cookie handling
-  works against a real WebUI.
-- Build the Docker image and verify `docker run -i` connects via stdio
-- Wire into Claude Desktop config and verify tool calls flow through
+- Smoke-test the HTTP transport: deploy via Portainer (Stack from Git
+  pointing at this repo) or `docker compose up` against real SABnzbd
+  and qBittorrent instances. Hit `/mcp` with the MCP Inspector or curl,
+  verify a tool roundtrip per client. qBittorrent's login flow is the
+  highest-risk path — verify session cookie handling works.
+- Smoke-test stdio path still works post-refactor: `docker run -i --rm
+  -e SABNZBD_URL=... -e SABNZBD_API_KEY=... downloader-mcp`.
+- Wire into Claude Desktop config (HTTP via `"url": "http://nas:3003/mcp"`
+  or stdio via `docker run -i`) and verify tool calls flow through.
 - After smoke test passes: decide on writes (pause/resume/delete/add).
   Currently out of scope.
 

@@ -39,13 +39,16 @@ optional registration in `src/index.ts` — no inheritance refactor.
 
 ## Layout
 
-- `src/index.ts` — MCP server entry. Reads env vars and conditionally
-  registers each client whose full config is present.
+- `src/index.ts` — MCP server entry. Computes which clients are enabled
+  from env vars at startup, then decides transport (stdio vs HTTP)
+  based on `MCP_PORT`. Per-session `McpServer` instances via the
+  `createServer()` factory.
 - `src/util.ts` — single `asText()` helper used by both clients.
 - `src/sabnzbd.ts` — `SabnzbdClient` + `registerSabnzbdTools`.
 - `src/qbittorrent.ts` — `QBittorrentClient` (with session-cookie
   handling and 403 retry) + `registerQbittorrentTools`.
 - `Dockerfile` — multi-stage build (alpine, non-root user).
+- `docker-compose.yml` — Compose/Portainer deployment using HTTP transport.
 - `.githooks/pre-commit` — gitleaks + PII pattern scan.
 
 ## When to add a `tools/` layer
@@ -75,6 +78,26 @@ When that moment arrives:
 Don't pre-split before that trigger. Three similar lines is better than
 a premature abstraction — and the right split shape is easier to see
 once the first orchestration tool exists than before.
+
+## Transport modes
+
+The same image supports two transports, selected at start time:
+
+- **stdio (default)** — used when `MCP_PORT` is unset. Server reads
+  MCP wire from stdin and writes to stdout. Standard mode for
+  `docker run -i` invocation by an MCP client.
+- **HTTP (Streamable HTTP)** — used when `MCP_PORT` is set to a port
+  number. Server listens on `0.0.0.0:$MCP_PORT` with two endpoints:
+  - `POST/GET/DELETE /mcp` — MCP Streamable HTTP per spec; per-session
+    `mcp-session-id` header. Clients initialize via `POST /mcp` (no
+    session header) which mints a UUID; subsequent requests reuse it.
+  - `GET /health` — liveness probe (used by docker healthcheck).
+    Includes the list of enabled clients for visibility.
+
+  Per-session `McpServer` instances via the `createServer()` factory;
+  client configs are read once at startup from env vars.
+
+The two modes are mutually exclusive in a given process.
 
 ## Common Commands
 

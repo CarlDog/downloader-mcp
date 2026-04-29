@@ -76,6 +76,33 @@ docker run -i --rm \
   ghcr.io/carldog/downloader-mcp:latest
 ```
 
+## Run with Docker Compose (HTTP, long-lived)
+
+The compose file runs the server in HTTP mode (Streamable HTTP) for
+long-lived deployment via Portainer or Compose. It pulls the published
+image from `ghcr.io/carldog/downloader-mcp:latest`.
+
+```bash
+# Set whichever client credentials apply:
+export SABNZBD_URL=http://192.168.1.50:8080; export SABNZBD_API_KEY=...
+export QBITTORRENT_URL=http://192.168.1.50:8081
+export QBITTORRENT_USERNAME=admin; export QBITTORRENT_PASSWORD=...
+export HOST_PORT=3003  # optional, defaults to 3003
+
+docker compose up
+```
+
+The MCP endpoint will be at `http://<host>:${HOST_PORT}/mcp`.
+
+## Deploy via Portainer (Stack from Git)
+
+1. In Portainer, *Stacks → Add Stack → Repository*.
+2. Repository URL: `https://github.com/CarlDog/downloader-mcp`
+3. Compose path: `docker-compose.yml`
+4. Environment variables: set whichever client credentials apply, plus
+   optionally `HOST_PORT`.
+5. Deploy. Healthcheck reaches green within ~10 seconds.
+
 ## Use with Claude Desktop
 
 Add to your `claude_desktop_config.json`:
