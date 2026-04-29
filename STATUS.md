@@ -4,10 +4,11 @@
 
 ## Phase
 
-HTTP transport added (matching the plex-mcp pilot). Same image now
-supports stdio and Streamable HTTP, selected by the `MCP_PORT` env var.
-`docker-compose.yml` added for Portainer/Compose deployment. Pending
-live smoke test of HTTP path against real SABnzbd and qBittorrent.
+Deployed and verified — running on the NAS at
+`http://carldog-nas:3003/mcp` with both SABnzbd and qBittorrent
+configured. End-to-end smoke tests returned a real SABnzbd queue
+(version 4.5.5, idle, 10.2 TB free) and a qBittorrent torrent list
+(qBittorrent's session-cookie auth path verified).
 
 ## Done
 
@@ -46,17 +47,10 @@ live smoke test of HTTP path against real SABnzbd and qBittorrent.
 
 ## Next
 
-- Smoke-test the HTTP transport: deploy via Portainer (Stack from Git
-  pointing at this repo) or `docker compose up` against real SABnzbd
-  and qBittorrent instances. Hit `/mcp` with the MCP Inspector or curl,
-  verify a tool roundtrip per client. qBittorrent's login flow is the
-  highest-risk path — verify session cookie handling works.
-- Smoke-test stdio path still works post-refactor: `docker run -i --rm
-  -e SABNZBD_URL=... -e SABNZBD_API_KEY=... downloader-mcp`.
-- Wire into Claude Desktop config (HTTP via `"url": "http://nas:3003/mcp"`
-  or stdio via `docker run -i`) and verify tool calls flow through.
-- After smoke test passes: decide on writes (pause/resume/delete/add).
-  Currently out of scope.
+- Wire into Claude Desktop and verify tool calls flow through end-to-end
+  from the assistant (rather than via curl).
+- Decide on writes (pause/resume/delete/add) — currently out of scope.
+- Add tests once a real SAB/qBT test target is set up (don't mock).
 
 ## Open Decisions
 
@@ -78,15 +72,7 @@ None active. Decisions made during scaffolding:
 
 ## Known Gaps
 
-- No tests yet
-- No CI yet
-- No published Docker image yet
-- API paths and shapes match my training-data knowledge but haven't
-  been verified against live instances. Most likely to shift:
-  - SABnzbd `mode=get_cats` (categories endpoint name) — uncommon, may
-    have changed in newer versions
-  - qBittorrent's "Ok." login response (some forks may differ)
-  - `/torrents/categories` response shape
+- No tests yet.
 - qBittorrent client retries once on 403. If a server has a custom
   rate-limit response that returns 403, this could mask it. Adjust if
   observed in practice.
