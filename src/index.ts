@@ -33,11 +33,26 @@ const enabled: string[] = [];
 if (sabConfig) enabled.push("SABnzbd");
 if (qbtConfig) enabled.push("qBittorrent");
 
+const INSTRUCTIONS = `MCP server for download clients: SABnzbd (usenet) and qBittorrent (torrents). Either client is optional — only configured ones have their tools registered. Read-only as of v1.
+
+Idioms:
+- Tools are prefixed: sabnzbd_*, qbittorrent_*. The visible set indicates which clients the user runs.
+- sabnzbd_queue and qbittorrent_list_torrents are the primary "what's downloading right now" surfaces. Pair with sabnzbd_history / qbittorrent_transfer_info for completed/aggregate state.
+- For qBittorrent, torrents are addressed by their info-hash (the long hex string from qbittorrent_list_torrents). Drill into a single torrent with qbittorrent_get_torrent or qbittorrent_torrent_files.
+- qBittorrent auth uses session cookies internally; the MCP server handles login transparently. The first call after a long idle may trigger a re-login.
+
+Auth: SABnzbd uses an API key (SABNZBD_API_KEY); qBittorrent uses WebUI username/password (QBITTORRENT_USERNAME / QBITTORRENT_PASSWORD).`;
+
 function createServer(): McpServer {
-  const server = new McpServer({
-    name: "downloader-mcp",
-    version: "0.1.0",
-  });
+  const server = new McpServer(
+    {
+      name: "downloader-mcp",
+      version: "0.1.0",
+    },
+    {
+      instructions: INSTRUCTIONS,
+    },
+  );
   if (sabConfig) {
     registerSabnzbdTools(
       server,
