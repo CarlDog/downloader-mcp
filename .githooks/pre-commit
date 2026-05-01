@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 1. Secret scan via gitleaks
+PERSONAL_EMAIL_RE='[A-Za-z0-9._%+-]+@(gmail|outlook|hotmail|yahoo|icloud|me|live|aol)\.[a-z]{2,}'
+
+# 1. Author identity check
+# The staged-content PII scan below cannot see git metadata, so a
+# personal-domain author email can still leak into commit history
+# even when file contents are clean. Block it here.
+AUTHOR_EMAIL=$(git var GIT_AUTHOR_IDENT | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+if printf '%s' "$AUTHOR_EMAIL" | grep -qE "$PERSONAL_EMAIL_RE"; then
+  echo "ERROR: git author email '$AUTHOR_EMAIL' uses a personal domain." >&2
+  echo "Switch to a GitHub noreply alias before committing:" >&2
+  echo "  git config user.email '<numeric-id>+<login>@users.noreply.github.com'" >&2
+  exit 1
+fi
+
+# 2. Secret scan via gitleaks
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "ERROR: gitleaks not installed. Install from https://github.com/gitleaks/gitleaks" >&2
   exit 1
@@ -10,7 +24,7 @@ fi
 echo "Running gitleaks..."
 gitleaks protect --staged --redact --config .gitleaks.toml
 
-# 2. PII pattern scan
+# 3. PII pattern scan
 # Catches user-home directory references and personal-domain email
 # addresses that often leak into committed content. Patterns are
 # deliberately generic so the hook itself contains no specific PII.
@@ -19,7 +33,7 @@ echo "Running PII pattern check..."
 PII_PATTERNS=(
   '[/\\]Users[/\\][A-Za-z0-9._-]+[/\\]'
   '[/\\]home[/\\][A-Za-z0-9._-]+[/\\]'
-  '[A-Za-z0-9._%+-]+@(gmail|outlook|hotmail|yahoo|icloud|me|live|aol)\.[a-z]{2,}'
+  "$PERSONAL_EMAIL_RE"
 )
 
 STAGED=$(git diff --cached --name-only --diff-filter=AM)
