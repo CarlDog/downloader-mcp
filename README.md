@@ -1,5 +1,10 @@
 # downloader-mcp
 
+<!-- fleet-confidence -->
+![code confidence](https://img.shields.io/badge/code_confidence-good-yellow) <sub>· `claude-opus-4-8[1m]` · 2026-07-07 · [details](https://github.com/CarlDog/downloader-mcp/issues/1)</sub>
+<!-- /fleet-confidence -->
+
+
 An [MCP](https://modelcontextprotocol.io) server for download clients —
 **SABnzbd** (usenet) and **qBittorrent** (torrents) — packaged as a
 Docker container. Companion to media-management MCPs like
