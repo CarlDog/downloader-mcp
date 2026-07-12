@@ -14,6 +14,10 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       MCP_PORT: "3000"
+      # Recommended: enable DNS-rebinding protection by listing the
+      # host[:port] values clients actually use to reach this server
+      # (Host header validation). Unset = protection off (warned at start).
+      # MCP_ALLOWED_HOSTS: "192.168.1.50:3003,host.docker.internal:3003"
       SABNZBD_URL: "${SABNZBD_URL:-}"
       SABNZBD_API_KEY: "${SABNZBD_API_KEY:-}"
       QBITTORRENT_URL: "${QBITTORRENT_URL:-}"

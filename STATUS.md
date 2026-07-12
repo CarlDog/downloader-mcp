@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-04-28
+**Last updated:** 2026-07-12
 
 ## Phase
 
@@ -44,6 +44,13 @@ configured. End-to-end smoke tests returned a real SABnzbd queue
   `${HOST_PORT:-3003}:3000`, env passthrough for `SABNZBD_*` and
   `QBITTORRENT_*` vars, healthcheck via wget. Pulls
   `ghcr.io/carldog/downloader-mcp:latest`.
+
+## Done (fleet-review fixes, 2026-07-12)
+
+- **Opt-in DNS-rebinding protection** for the HTTP transport via
+  `MCP_ALLOWED_HOSTS` (comma-separated `host[:port]`). Fail-soft: unset
+  keeps current behavior (LAN clients unaffected) with a startup warning.
+  Documented in README + commented example in docker-compose.yml.
 
 ## Next
 
