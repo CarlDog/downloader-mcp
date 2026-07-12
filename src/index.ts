@@ -110,6 +110,28 @@ if (port) {
   httpApp.use(express.json());
 
   const transports: Record<string, StreamableHTTPServerTransport> = {};
+  const lastActivity: Record<string, number> = {};
+
+  // Idle-session eviction: clients that abandon a session without
+  // DELETE /mcp would otherwise leave their transport + McpServer
+  // resident forever. Sweep periodically and close idle sessions;
+  // transport.onclose handles the map cleanup.
+  const SESSION_IDLE_MS = 30 * 60 * 1000;
+  const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+  setInterval(() => {
+    const cutoff = Date.now() - SESSION_IDLE_MS;
+    for (const [id, seen] of Object.entries(lastActivity)) {
+      if (seen < cutoff) {
+        console.error(`downloader-mcp: evicting idle session ${id}`);
+        const t = transports[id];
+        if (t) {
+          void t.close();
+        } else {
+          delete lastActivity[id];
+        }
+      }
+    }
+  }, SWEEP_INTERVAL_MS).unref();
 
   httpApp.all("/mcp", async (req: Request, res: Response) => {
     try {
@@ -118,6 +140,7 @@ if (port) {
 
       if (sessionId && transports[sessionId]) {
         transport = transports[sessionId];
+        lastActivity[sessionId] = Date.now();
       } else if (
         !sessionId &&
         req.method === "POST" &&
@@ -127,6 +150,7 @@ if (port) {
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (id) => {
             transports[id] = transport;
+            lastActivity[id] = Date.now();
           },
           ...(allowedHosts.length > 0
             ? { enableDnsRebindingProtection: true, allowedHosts }
@@ -135,6 +159,7 @@ if (port) {
         transport.onclose = () => {
           if (transport.sessionId) {
             delete transports[transport.sessionId];
+            delete lastActivity[transport.sessionId];
           }
         };
         const server = createServer();

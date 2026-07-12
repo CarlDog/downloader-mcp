@@ -51,6 +51,9 @@ configured. End-to-end smoke tests returned a real SABnzbd queue
   `MCP_ALLOWED_HOSTS` (comma-separated `host[:port]`). Fail-soft: unset
   keeps current behavior (LAN clients unaffected) with a startup warning.
   Documented in README + commented example in docker-compose.yml.
+- **Idle-session eviction** for the HTTP transport: sessions with no
+  activity for 30 min are swept every 5 min, so abandoned sessions no
+  longer leak transports/McpServer instances.
 
 ## Next
 
