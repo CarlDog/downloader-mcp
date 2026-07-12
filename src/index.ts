@@ -81,8 +81,31 @@ if (portStr && (port === null || Number.isNaN(port))) {
   process.exit(1);
 }
 
+// DNS-rebinding protection (opt-in, fail-soft). When MCP_ALLOWED_HOSTS is
+// set (comma-separated host[:port] list), the HTTP transport validates the
+// Host header against it. When unset, behavior is unchanged so existing LAN
+// deployments keep working — but we warn at startup.
+const allowedHostsStr = process.env.MCP_ALLOWED_HOSTS;
+const allowedHosts = allowedHostsStr
+  ? allowedHostsStr
+      .split(",")
+      .map((h) => h.trim())
+      .filter((h) => h.length > 0)
+  : [];
+
 if (port) {
   // HTTP transport (long-lived server, e.g. for Portainer/Compose deployment).
+  if (allowedHosts.length > 0) {
+    console.error(
+      `downloader-mcp: DNS-rebinding protection enabled (allowed hosts: ${allowedHosts.join(", ")})`,
+    );
+  } else {
+    console.error(
+      "downloader-mcp: MCP_ALLOWED_HOSTS not set — DNS-rebinding protection disabled. " +
+        "Recommended: set it to the host names/IPs clients use (e.g. the NAS IP, host.docker.internal).",
+    );
+  }
+
   const httpApp = express();
   httpApp.use(express.json());
 
@@ -105,6 +128,9 @@ if (port) {
           onsessioninitialized: (id) => {
             transports[id] = transport;
           },
+          ...(allowedHosts.length > 0
+            ? { enableDnsRebindingProtection: true, allowedHosts }
+            : {}),
         });
         transport.onclose = () => {
           if (transport.sessionId) {

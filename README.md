@@ -54,6 +54,21 @@ API keys / credentials are found in each app's settings:
 
 At least one client must be configured or the server exits with an error.
 
+### HTTP transport hardening (optional)
+
+When running in HTTP mode (`MCP_PORT` set), you can enable DNS-rebinding
+protection with:
+
+| Env var | Meaning |
+| --- | --- |
+| `MCP_ALLOWED_HOSTS` | Comma-separated `host[:port]` list. When set, requests whose `Host` header isn't in the list are rejected. |
+
+Recommended value: the host names/IPs clients actually use to reach the
+server — e.g. the NAS IP and `host.docker.internal`
+(`MCP_ALLOWED_HOSTS=192.168.1.50:3003,host.docker.internal:3003`).
+When unset, behavior is unchanged (any Host accepted) and the server
+logs a one-line startup warning recommending it.
+
 ## Run with Docker
 
 ```bash
