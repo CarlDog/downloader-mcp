@@ -82,7 +82,10 @@ None active. Decisions made during scaffolding:
 
 ## Known Gaps
 
-- No tests yet.
+- No tests yet — a deliberate gap, not an oversight: there is no real
+  SABnzbd/qBittorrent test target to run against, and per working style
+  we don't mock these APIs. CI runs typecheck/lint/build only. Revisit
+  when a real test target exists.
 - qBittorrent client retries once on 403. If a server has a custom
   rate-limit response that returns 403, this could mask it. Adjust if
   observed in practice.

@@ -11,7 +11,7 @@ into this file, MEMORY.md, or Serena memories — reference STATUS.md.
 
 ## Current Sprint
 
-**Phase: scaffolding** — see [STATUS.md](STATUS.md) for the active
+**Phase: deployed and verified (NAS)** — see [STATUS.md](STATUS.md) for the active
 phase, what's done, and what's next.
 
 ## Stack
