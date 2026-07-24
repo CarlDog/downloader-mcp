@@ -1,0 +1,4 @@
+# Force LF line endings in working trees on all platforms.
+# Prevents prettier's `endOfLine: "lf"` from failing on Windows checkouts
+# where Git's autocrlf would otherwise write CRLF.
+* text=auto eol=lf
