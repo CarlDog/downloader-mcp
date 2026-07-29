@@ -55,6 +55,14 @@ configured. End-to-end smoke tests returned a real SABnzbd queue
   activity for 30 min are swept every 5 min, so abandoned sessions no
   longer leak transports/McpServer instances.
 
+- **Dev-chain eslint 10 + SDK 1.30 audit sweep (2026-07-29).** eslint
+  ^10.8.0, @eslint/js ^10.0.1, eslint-config-prettier ^10.1.8;
+  @modelcontextprotocol/sdk ^1.30.0 with @hono/node-server 2.0.12
+  (GHSA-frvp-7c67-39w9). npm audit 0, was 5 high + 2 moderate.
+  Lockfile written with pinned npm 10.9.8. Verified: lint, typecheck,
+  build, format:check (no unit suite in the read-only v1). Runtime
+  majors stay deferred per the closed npm-major PR.
+
 ## Next
 
 - Wire into Claude Desktop and verify tool calls flow through end-to-end
