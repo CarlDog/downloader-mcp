@@ -22,6 +22,10 @@ services:
       # host[:port] values clients actually use to reach this server
       # (Host header validation). Unset = protection off (warned at start).
       MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-}"
+      # Idle-session eviction threshold (default 30 min). Was a bare constant
+      # in source with nothing for compose to expose (docker-deployments.md
+      # §10); now env-tunable from Portainer without a rebuild.
+      MCP_SESSION_IDLE_MS: "${MCP_SESSION_IDLE_MS:-1800000}"
       SABNZBD_URL: "${SABNZBD_URL:-}"
       SABNZBD_API_KEY: "${SABNZBD_API_KEY:-}"
       QBITTORRENT_URL: "${QBITTORRENT_URL:-}"

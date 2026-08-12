@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import express, { type Request, type Response } from "express";
+import { mountMcpRoute } from "./mcp-route.js";
 import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
 import { QBittorrentClient, registerQbittorrentTools } from "./qbittorrent.js";
 
@@ -99,20 +97,6 @@ const allowedHosts = allowedHostsStr
 // healthcheck, which can't supply one.
 const authToken = process.env.MCP_AUTH_TOKEN || undefined;
 
-function isAuthorized(req: Request): boolean {
-  if (!authToken) return true;
-  const header = req.headers.authorization;
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
-    return false;
-  }
-  const presented = header.slice("Bearer ".length);
-  // Hash both sides so timingSafeEqual gets equal-length buffers regardless
-  // of the presented token's length.
-  const a = createHash("sha256").update(presented).digest();
-  const b = createHash("sha256").update(authToken).digest();
-  return timingSafeEqual(a, b);
-}
-
 if (port) {
   // HTTP transport (long-lived server, e.g. for Portainer/Compose deployment).
   if (allowedHosts.length > 0) {
@@ -146,7 +130,12 @@ if (port) {
   // DELETE /mcp would otherwise leave their transport + McpServer
   // resident forever. Sweep periodically and close idle sessions;
   // transport.onclose handles the map cleanup.
-  const SESSION_IDLE_MS = 30 * 60 * 1000;
+  // Env-tunable so a deployment can dial it without a rebuild. This was a
+  // bare constant, so docker-compose had nothing it could expose and the
+  // value was only reachable by editing source (docker-deployments.md §10).
+  const SESSION_IDLE_MS =
+    Number.parseInt(process.env.MCP_SESSION_IDLE_MS ?? "", 10) ||
+    30 * 60 * 1000;
   const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
   setInterval(() => {
     const cutoff = Date.now() - SESSION_IDLE_MS;
@@ -205,13 +194,28 @@ if (port) {
         };
         const server = createServer();
         await server.connect(transport);
+      } else if (sessionId) {
+        // A session id we don't recognise: evicted by the idle sweep, or the
+        // process restarted under a live client. The spec REQUIRES 404 here —
+        // it is the client's ONLY defined signal to start a new session by
+        // re-initializing (2025-06-18, Session Management §3/§4). A 400 reads
+        // as a generic protocol error, so the client stays wedged until a
+        // human restarts it: a routine eviction becomes a dead connection.
+        res.status(404).json({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: "Not Found: unknown or expired session",
+          },
+          id: null,
+        });
+        return;
       } else {
         res.status(400).json({
           jsonrpc: "2.0",
           error: {
             code: -32000,
-            message:
-              "Bad Request: missing or unknown session, or non-initialize POST",
+            message: "Bad Request: non-initialize request without a session",
           },
           id: null,
         });

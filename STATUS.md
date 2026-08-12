@@ -4,6 +4,24 @@
 
 ## Phase
 
+**2026-08-12 — terminated sessions now answer HTTP 404, not 400.** The
+Streamable HTTP spec (2025-06-18, Session Management §3/§4) makes 404 the
+client's only defined signal to re-initialize after the idle sweep evicts a
+session; the old 400 turned a routine eviction into what the client reported
+as a dead connection. Fleet-wide fix — this repo hand-rolls its `/mcp`
+handler rather than using the canonical `http-transport.ts`, so the handler
+was extracted out of the self-executing `src/index.ts` into
+`src/mcp-route.ts` to give it a seam to test against. The fix itself is
+verified by an end-to-end probe against the built server (unknown session
+404, GET without session 400, initialize 200); **the vitest suite for
+`mcp-route.ts` is still outstanding** — the test wiring landed but the
+tests themselves have not, so `npm run test` currently finds no files. The
+idle threshold is now env-driven (`MCP_SESSION_IDLE_MS`) instead of a bare
+constant, and exposed in `docker-compose.yml` so Portainer can tune it.
+
+**Do not deploy from this commit until the suite lands** — the `test`
+script points at a suite that does not exist yet.
+
 Deployed and verified — running on the NAS at
 `http://your-nas:3003/mcp` with both SABnzbd and qBittorrent
 configured. End-to-end smoke tests returned a real SABnzbd queue
