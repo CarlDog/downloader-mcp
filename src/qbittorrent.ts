@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { asText } from "./util.js";
+import { asText, redactSecrets } from "./util.js";
 
 interface RequestOptions {
   method?: string;
@@ -97,9 +97,9 @@ export class QBittorrentClient {
     }
     const ctype = res.headers.get("content-type") ?? "";
     if (ctype.includes("application/json")) {
-      return (await res.json()) as T;
+      return redactSecrets(await res.json()) as T;
     }
-    return (await res.text()) as unknown as T;
+    return redactSecrets(await res.text()) as unknown as T;
   }
 
   async listTorrents(filter?: string): Promise<unknown> {

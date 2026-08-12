@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-07-12
+**Last updated:** 2026-08-12
 
 ## Phase
 
@@ -54,6 +54,40 @@ configured. End-to-end smoke tests returned a real SABnzbd queue
 - **Idle-session eviction** for the HTTP transport: sessions with no
   activity for 30 min are swept every 5 min, so abandoned sessions no
   longer leak transports/McpServer instances.
+
+## Done (dogfooding fixes, 2026-08-12)
+
+Sourced from real-usage friction filed as OpenChronicle `mcp-feedback`
+memories during actual downloader-mcp tool calls (radarr blocked-import
+triage session + fleet-wide auth-hardening audit).
+
+- **Fixed HIGH-severity credential leak:** `sabnzbd_history` (and every
+  SABnzbd/qBittorrent response) echoed the NZBgeek indexer API key in
+  plaintext — confirmed on a live record in both the `url` field and,
+  independently, inside `stage_log[].actions[]` (a leak vector the
+  original finding didn't name). Fixed with a generic pattern-based
+  redaction chokepoint (`util.ts` `redactSecrets`) applied to every
+  response in both clients, rather than a field-name allowlist — closes
+  vectors not yet discovered too. The exposed NZBgeek key itself was
+  rotated by the operator, independent of this code fix.
+- **`sabnzbd_history` now compact-by-default** (`full: true` for the raw
+  per-slot payload) — the original heavy payload (stage_log, md5sum,
+  meta, etc.) timed out at `limit: 60`.
+- **`sabnzbd_history` now passes through `search`, `category`, `nzo_ids`,
+  `start`** — verified live against the real SABnzbd API that each param
+  actually filters/pages rather than being silently ignored. `nzo_ids`
+  is the same id Radarr/Sonarr expose as `downloadId`, enabling a direct
+  cross-MCP lookup instead of eyeballing a name match.
+- **`MCP_AUTH_TOKEN` bearer-token auth implemented** for the HTTP
+  transport (didn't exist in code before — mirrors botify-mcp's
+  timing-safe SHA-256 comparison). Both `MCP_AUTH_TOKEN` and
+  `MCP_ALLOWED_HOSTS` are now real `${VAR:-default}` substitutions in
+  `docker-compose.yml` (previously `MCP_ALLOWED_HOSTS` was commented out
+  and unreachable from Portainer; `MCP_AUTH_TOKEN` had no wiring at all).
+  Both opt-in, fail-soft, warned at startup when unset.
+- Verified: typecheck, lint, format:check, build all clean; auth gate
+  functionally verified end-to-end over real HTTP (no/wrong token → 401,
+  correct token → passes gate, `/health` stays open).
 
 - **Dev-chain eslint 10 + SDK 1.30 audit sweep (2026-07-29).** eslint
   ^10.8.0, @eslint/js ^10.0.1, eslint-config-prettier ^10.1.8;

@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
 import { QBittorrentClient, registerQbittorrentTools } from "./qbittorrent.js";
@@ -93,6 +93,26 @@ const allowedHosts = allowedHostsStr
       .filter((h) => h.length > 0)
   : [];
 
+// Optional shared secret for /mcp (opt-in, fail-soft, same posture as
+// MCP_ALLOWED_HOSTS above). When set, every /mcp request must carry
+// `Authorization: Bearer <token>`; /health stays open for the docker
+// healthcheck, which can't supply one.
+const authToken = process.env.MCP_AUTH_TOKEN || undefined;
+
+function isAuthorized(req: Request): boolean {
+  if (!authToken) return true;
+  const header = req.headers.authorization;
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+    return false;
+  }
+  const presented = header.slice("Bearer ".length);
+  // Hash both sides so timingSafeEqual gets equal-length buffers regardless
+  // of the presented token's length.
+  const a = createHash("sha256").update(presented).digest();
+  const b = createHash("sha256").update(authToken).digest();
+  return timingSafeEqual(a, b);
+}
+
 if (port) {
   // HTTP transport (long-lived server, e.g. for Portainer/Compose deployment).
   if (allowedHosts.length > 0) {
@@ -103,6 +123,16 @@ if (port) {
     console.error(
       "downloader-mcp: MCP_ALLOWED_HOSTS not set — DNS-rebinding protection disabled. " +
         "Recommended: set it to the host names/IPs clients use (e.g. the NAS IP, host.docker.internal).",
+    );
+  }
+  if (authToken) {
+    console.error(
+      "downloader-mcp: MCP_AUTH_TOKEN set — /mcp requires a bearer token.",
+    );
+  } else {
+    console.error(
+      "downloader-mcp: MCP_AUTH_TOKEN not set — /mcp accepts unauthenticated requests from " +
+        "anything that can reach it. Set it unless this is a fully trusted network.",
     );
   }
 
@@ -134,6 +164,17 @@ if (port) {
   }, SWEEP_INTERVAL_MS).unref();
 
   httpApp.all("/mcp", async (req: Request, res: Response) => {
+    if (!isAuthorized(req)) {
+      res.status(401).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Unauthorized: missing or invalid bearer token",
+        },
+        id: null,
+      });
+      return;
+    }
     try {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
       let transport: StreamableHTTPServerTransport;
