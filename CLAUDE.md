@@ -43,6 +43,11 @@ optional registration in `src/index.ts` — no inheritance refactor.
   from env vars at startup, then decides transport (stdio vs HTTP)
   based on `MCP_PORT`. Per-session `McpServer` instances via the
   `createServer()` factory.
+- `src/mcp-route.ts` — the Streamable HTTP `/mcp` route: bearer auth,
+  per-session transport map, idle sweep, session dispatch. Split out of
+  `index.ts` so it can be imported by a test — `index.ts` self-executes on
+  import (and `exit(1)`s with no client configured), so nothing in it was
+  reachable without booting a server. Covered by `src/mcp-route.test.ts`.
 - `src/util.ts` — single `asText()` helper used by both clients.
 - `src/sabnzbd.ts` — `SabnzbdClient` + `registerSabnzbdTools`.
 - `src/qbittorrent.ts` — `QBittorrentClient` (with session-cookie
@@ -105,7 +110,8 @@ The two modes are mutually exclusive in a given process.
 npm install            # install deps
 npm run build          # tsc → dist/
 npm run dev            # tsx src/index.ts (needs at least one client's env vars)
-npm run typecheck      # tsc --noEmit
+npm test               # vitest run (no credentials needed)
+npm run typecheck      # tsc -p tsconfig.typecheck.json (includes tests)
 docker build -t downloader-mcp .
 ```
 
@@ -133,9 +139,24 @@ docker build -t downloader-mcp .
 
 ## Testing
 
-No tests yet. When added, integration tests against real SABnzbd and
-qBittorrent instances behind env-gated tests (don't mock — see
-working-style note about mocked-vs-real divergence).
+`vitest`, colocated next to the code under test (standard MCP-D02) and
+discovered via `vitest.config.ts`'s `src/**/*.test.ts`. `npm test` needs no
+credentials and no live upstream.
+
+- `src/mcp-route.test.ts` — Streamable HTTP session lifecycle. Boots a real
+  Express listener and asserts the status contract over the wire: an unknown
+  or swept session answers **404** (never 400, which leaves a client wedged
+  after a routine eviction), a non-initialize request with no session
+  answers 400, bearer auth is checked *before* session handling, and the
+  Host allowlist matches the full `host:port`.
+
+`npm run typecheck` uses `tsconfig.typecheck.json`, which unlike the build
+config includes `*.test.ts` — vitest transpiles without typechecking, so
+without it test code is the one part of the repo nothing type-checks.
+
+Integration tests against real SABnzbd and qBittorrent instances should be
+env-gated when added (don't mock — see the working-style note about
+mocked-vs-real divergence).
 
 ## MCP tooling (local workstation)
 

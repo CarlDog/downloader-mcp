@@ -1,0 +1,11 @@
+// Typechecks the TESTS too — standard MCP-D01.
+// The build config excludes *.test.ts, and a transpile-only runner like vitest
+// never typechecks them either, so without this file test code is the one part
+// of the repo nothing type-checks.
+// See fleet/lessons/2026-07-24-transpile-only-test-runners-skip-typechecking.md
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

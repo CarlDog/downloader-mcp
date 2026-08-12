@@ -123,112 +123,19 @@ if (port) {
   const httpApp = express();
   httpApp.use(express.json());
 
-  const transports: Record<string, StreamableHTTPServerTransport> = {};
-  const lastActivity: Record<string, number> = {};
-
-  // Idle-session eviction: clients that abandon a session without
-  // DELETE /mcp would otherwise leave their transport + McpServer
-  // resident forever. Sweep periodically and close idle sessions;
-  // transport.onclose handles the map cleanup.
-  // Env-tunable so a deployment can dial it without a rebuild. This was a
-  // bare constant, so docker-compose had nothing it could expose and the
-  // value was only reachable by editing source (docker-deployments.md §10).
-  const SESSION_IDLE_MS =
+  // Idle-session eviction threshold. Env-tunable so a deployment can dial it
+  // without a rebuild. This was a bare constant, so docker-compose had nothing
+  // it could expose and the value was only reachable by editing source
+  // (docker-deployments.md §10).
+  const sessionIdleMs =
     Number.parseInt(process.env.MCP_SESSION_IDLE_MS ?? "", 10) ||
     30 * 60 * 1000;
-  const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
-  setInterval(() => {
-    const cutoff = Date.now() - SESSION_IDLE_MS;
-    for (const [id, seen] of Object.entries(lastActivity)) {
-      if (seen < cutoff) {
-        console.error(`downloader-mcp: evicting idle session ${id}`);
-        const t = transports[id];
-        if (t) {
-          void t.close();
-        } else {
-          delete lastActivity[id];
-        }
-      }
-    }
-  }, SWEEP_INTERVAL_MS).unref();
 
-  httpApp.all("/mcp", async (req: Request, res: Response) => {
-    if (!isAuthorized(req)) {
-      res.status(401).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Unauthorized: missing or invalid bearer token",
-        },
-        id: null,
-      });
-      return;
-    }
-    try {
-      const sessionId = req.headers["mcp-session-id"] as string | undefined;
-      let transport: StreamableHTTPServerTransport;
-
-      if (sessionId && transports[sessionId]) {
-        transport = transports[sessionId];
-        lastActivity[sessionId] = Date.now();
-      } else if (
-        !sessionId &&
-        req.method === "POST" &&
-        isInitializeRequest(req.body)
-      ) {
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (id) => {
-            transports[id] = transport;
-            lastActivity[id] = Date.now();
-          },
-          ...(allowedHosts.length > 0
-            ? { enableDnsRebindingProtection: true, allowedHosts }
-            : {}),
-        });
-        transport.onclose = () => {
-          if (transport.sessionId) {
-            delete transports[transport.sessionId];
-            delete lastActivity[transport.sessionId];
-          }
-        };
-        const server = createServer();
-        await server.connect(transport);
-      } else if (sessionId) {
-        // A session id we don't recognise: evicted by the idle sweep, or the
-        // process restarted under a live client. The spec REQUIRES 404 here —
-        // it is the client's ONLY defined signal to start a new session by
-        // re-initializing (2025-06-18, Session Management §3/§4). A 400 reads
-        // as a generic protocol error, so the client stays wedged until a
-        // human restarts it: a routine eviction becomes a dead connection.
-        res.status(404).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Not Found: unknown or expired session",
-          },
-          id: null,
-        });
-        return;
-      } else {
-        res.status(400).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Bad Request: non-initialize request without a session",
-          },
-          id: null,
-        });
-        return;
-      }
-
-      await transport.handleRequest(req, res, req.body);
-    } catch (err) {
-      console.error("MCP request error:", err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Internal server error" });
-      }
-    }
+  mountMcpRoute(httpApp, "/mcp", {
+    createServer,
+    authToken,
+    allowedHosts,
+    sessionIdleMs,
   });
 
   httpApp.get("/health", (_req: Request, res: Response) => {

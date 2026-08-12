@@ -11,16 +11,18 @@ session; the old 400 turned a routine eviction into what the client reported
 as a dead connection. Fleet-wide fix — this repo hand-rolls its `/mcp`
 handler rather than using the canonical `http-transport.ts`, so the handler
 was extracted out of the self-executing `src/index.ts` into
-`src/mcp-route.ts` to give it a seam to test against. The fix itself is
-verified by an end-to-end probe against the built server (unknown session
-404, GET without session 400, initialize 200); **the vitest suite for
-`mcp-route.ts` is still outstanding** — the test wiring landed but the
-tests themselves have not, so `npm run test` currently finds no files. The
-idle threshold is now env-driven (`MCP_SESSION_IDLE_MS`) instead of a bare
-constant, and exposed in `docker-compose.yml` so Portainer can tune it.
+`src/mcp-route.ts` to give it a seam to test against. The idle threshold
+is now env-driven (`MCP_SESSION_IDLE_MS`) instead of a bare constant, and
+exposed in `docker-compose.yml` so Portainer can tune it.
 
-**Do not deploy from this commit until the suite lands** — the `test`
-script points at a suite that does not exist yet.
+**The vitest suite landed** (`src/mcp-route.test.ts`, 12 tests) — this
+repo's first tests, so it also gained `vitest.config.ts`, a `test` script,
+and `tsconfig.typecheck.json` (typecheck now covers `*.test.ts`, which the
+build config excludes and vitest never checks). The suite was verified to
+actually bite: reverting the 404 branch fails 3 of its tests. Verified
+green: build, typecheck, test, lint, format:check, plus an end-to-end probe
+against the built server (unknown session 404, GET without session 400,
+initialize 200).
 
 Deployed and verified — running on the NAS at
 `http://your-nas:3003/mcp` with both SABnzbd and qBittorrent
@@ -120,7 +122,10 @@ triage session + fleet-wide auth-hardening audit).
 - Wire into Claude Desktop and verify tool calls flow through end-to-end
   from the assistant (rather than via curl).
 - Decide on writes (pause/resume/delete/add) — currently out of scope.
-- Add tests once a real SAB/qBT test target is set up (don't mock).
+- Add *integration* tests once a real SAB/qBT test target is set up
+  (don't mock). The test harness itself now exists (vitest, colocated,
+  `src/**/*.test.ts`), so this is no longer a from-scratch setup — an
+  env-gated suite alongside `src/mcp-route.test.ts` is all it needs.
 
 ## Open Decisions
 
@@ -142,10 +147,21 @@ None active. Decisions made during scaffolding:
 
 ## Known Gaps
 
-- No tests yet — a deliberate gap, not an oversight: there is no real
-  SABnzbd/qBittorrent test target to run against, and per working style
-  we don't mock these APIs. CI runs typecheck/lint/build only. Revisit
-  when a real test target exists.
+- No *client* tests — a deliberate gap, not an oversight: there is no
+  real SABnzbd/qBittorrent test target to run against, and per working
+  style we don't mock these APIs. Revisit when a real test target
+  exists. (Superseded in part 2026-08-12: the repo does now have a test
+  suite and CI does now run `npm test` — but it covers the HTTP
+  transport, which needs no upstream, not the two clients.)
+
+- **`brace-expansion` high-severity advisory (GHSA-rgw5-rvv9-x895, DoS
+  via unbounded intermediate arrays) reported by `npm audit`.** Dev-only
+  — it enters through the eslint chain, not runtime deps, so it does not
+  reach the shipped image. Present before vitest was added (plex-mcp
+  reports the same advisory with no dependency change), so treat it as a
+  fleet-wide dev-chain bump rather than a per-repo fix. Note this
+  supersedes the "npm audit 0" claim in the 2026-07-29 dependency entry
+  above — the advisory postdates it.
 - qBittorrent client retries once on 403. If a server has a custom
   rate-limit response that returns 403, this could mask it. Adjust if
   observed in practice.
