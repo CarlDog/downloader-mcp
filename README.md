@@ -43,11 +43,12 @@ silently disables the client.
 | Client | Required env vars | Default port |
 | --- | --- | --- |
 | SABnzbd | `SABNZBD_URL`, `SABNZBD_API_KEY` | 8080 |
-| qBittorrent | `QBITTORRENT_URL`, `QBITTORRENT_USERNAME`, `QBITTORRENT_PASSWORD` | 8080 |
+| qBittorrent | `QBITTORRENT_URL`, `QBITTORRENT_API_KEY` | 8080 |
 
-API keys / credentials are found in each app's settings:
+API keys are found in each app's settings:
 - SABnzbd: *Config → General → API Key*
-- qBittorrent: *Tools → Options → Web UI* (default user `admin`)
+- qBittorrent: *Tools → Options → Web UI → API Key* (requires
+  qBittorrent >= v5.2.0 / WebAPI >= v2.14.1)
 
 > **Note:** SABnzbd and qBittorrent both default to port 8080. If you
 > run both on the same host, remap one of them in its own config.
@@ -82,7 +83,7 @@ docker build -t downloader-mcp .
 docker run -i --rm \
   -e SABNZBD_URL=http://192.168.1.50:8080 -e SABNZBD_API_KEY=... \
   -e QBITTORRENT_URL=http://192.168.1.50:8081 \
-  -e QBITTORRENT_USERNAME=admin -e QBITTORRENT_PASSWORD=... \
+  -e QBITTORRENT_API_KEY=... \
   downloader-mcp
 ```
 
@@ -112,7 +113,7 @@ image from `ghcr.io/carldog/downloader-mcp:latest`.
 # Set whichever client credentials apply:
 export SABNZBD_URL=http://192.168.1.50:8080; export SABNZBD_API_KEY=...
 export QBITTORRENT_URL=http://192.168.1.50:8081
-export QBITTORRENT_USERNAME=admin; export QBITTORRENT_PASSWORD=...
+export QBITTORRENT_API_KEY=...
 export HOST_PORT=3003  # optional, defaults to 3003
 
 docker compose up
@@ -142,15 +143,14 @@ Add to your `claude_desktop_config.json`:
         "run", "-i", "--rm",
         "-e", "SABNZBD_URL", "-e", "SABNZBD_API_KEY",
         "-e", "QBITTORRENT_URL",
-        "-e", "QBITTORRENT_USERNAME", "-e", "QBITTORRENT_PASSWORD",
+        "-e", "QBITTORRENT_API_KEY",
         "downloader-mcp"
       ],
       "env": {
         "SABNZBD_URL": "http://192.168.1.50:8080",
         "SABNZBD_API_KEY": "...",
         "QBITTORRENT_URL": "http://192.168.1.50:8081",
-        "QBITTORRENT_USERNAME": "admin",
-        "QBITTORRENT_PASSWORD": "..."
+        "QBITTORRENT_API_KEY": "..."
       }
     }
   }

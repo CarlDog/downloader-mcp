@@ -30,8 +30,8 @@ in common at the API layer:
 
 - **SABnzbd**: query-string GET API (`/api?mode=queue&apikey=X&output=json`).
   Single endpoint, mode-driven dispatch.
-- **qBittorrent**: REST-ish (`/api/v2/...`) with form-login session
-  cookie auth (`POST /api/v2/auth/login` → `SID` cookie).
+- **qBittorrent**: REST-ish (`/api/v2/...`) with a static
+  `Authorization: Bearer <API key>` header on every request.
 
 Each client is fully self-contained in its own file. Adding a third
 client (Deluge, Transmission, NZBGet, etc.) means a new file and a new
@@ -50,8 +50,8 @@ optional registration in `src/index.ts` — no inheritance refactor.
   reachable without booting a server. Covered by `src/mcp-route.test.ts`.
 - `src/util.ts` — single `asText()` helper used by both clients.
 - `src/sabnzbd.ts` — `SabnzbdClient` + `registerSabnzbdTools`.
-- `src/qbittorrent.ts` — `QBittorrentClient` (with session-cookie
-  handling and 403 retry) + `registerQbittorrentTools`.
+- `src/qbittorrent.ts` — `QBittorrentClient` (static Bearer API-key
+  auth) + `registerQbittorrentTools`.
 - `Dockerfile` — multi-stage build (alpine, non-root user).
 - `docker-compose.yml` — Compose/Portainer deployment using HTTP transport.
 - `.githooks/pre-commit` — gitleaks + PII pattern scan.
@@ -130,12 +130,13 @@ docker build -t downloader-mcp .
 
 ## qBittorrent specifics
 
-- Login is lazy: triggered on the first request via `ensureLoggedIn()`.
-- Session cookie cached in-memory on the client instance.
-- On 403, the client retries once with a fresh login (handles
-  session expiry mid-session). The retry guard prevents infinite loops.
-- Multiple concurrent first-requests share a single login Promise to
-  avoid double-login races.
+- Auth is a static `Authorization: Bearer <QBITTORRENT_API_KEY>` header
+  on every request — no login step, no session, no cookie, nothing to
+  refresh on 403 (a 403 just means the key is wrong/revoked).
+- Requires qBittorrent >= v5.2.0 (WebAPI >= v2.14.1), which introduced
+  API key auth. Generate the key under WebUI Options > API Key. Only
+  one key exists at a time; regenerating it immediately invalidates
+  the previous one.
 
 ## Testing
 

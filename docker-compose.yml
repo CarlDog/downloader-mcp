@@ -29,8 +29,7 @@ services:
       SABNZBD_URL: "${SABNZBD_URL:-}"
       SABNZBD_API_KEY: "${SABNZBD_API_KEY:-}"
       QBITTORRENT_URL: "${QBITTORRENT_URL:-}"
-      QBITTORRENT_USERNAME: "${QBITTORRENT_USERNAME:-}"
-      QBITTORRENT_PASSWORD: "${QBITTORRENT_PASSWORD:-}"
+      QBITTORRENT_API_KEY: "${QBITTORRENT_API_KEY:-}"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
       interval: 30s

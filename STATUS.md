@@ -1,8 +1,21 @@
 # Status
 
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-18
 
 ## Phase
+
+**2026-08-18 — qBittorrent auth switched from WebUI session-cookie
+login to a static Bearer API key.** qBittorrent v5.2.0 (WebAPI
+v2.14.1) added native API key auth; `QBittorrentClient` now sends
+`Authorization: Bearer <QBITTORRENT_API_KEY>` on every request instead
+of `POST /api/v2/auth/login` + cached `SID` cookie. This deletes the
+login/cookie/403-retry machinery entirely rather than adding a second
+auth path — no reason to keep the weaker, more complex mechanism
+alongside the new one. `QBITTORRENT_USERNAME`/`QBITTORRENT_PASSWORD`
+are replaced by `QBITTORRENT_API_KEY` everywhere (env, compose,
+README, CLAUDE.md) — this is a breaking config change for any existing
+deployment. Verified: typecheck, build, test (12/12), lint,
+format:check all clean. Not yet deployed to the NAS.
 
 **2026-08-12 — terminated sessions now answer HTTP 404, not 400.** The
 Streamable HTTP spec (2025-06-18, Session Management §3/§4) makes 404 the
@@ -109,6 +122,19 @@ triage session + fleet-wide auth-hardening audit).
   functionally verified end-to-end over real HTTP (no/wrong token → 401,
   correct token → passes gate, `/health` stays open).
 
+## Done (qBittorrent API-key auth, 2026-08-18)
+
+- Replaced `QBittorrentClient`'s session-cookie login (`POST
+  /api/v2/auth/login` → cached `SID` cookie, retry-once-on-403) with a
+  static `Authorization: Bearer <QBITTORRENT_API_KEY>` header — no
+  login step, no session state, nothing to refresh. Requires
+  qBittorrent >= v5.2.0 / WebAPI >= v2.14.1.
+- `QBITTORRENT_USERNAME` + `QBITTORRENT_PASSWORD` removed; replaced by
+  `QBITTORRENT_API_KEY` in `.env.example`, `docker-compose.yml`,
+  `README.md`, `CLAUDE.md`, and the server's MCP instructions string.
+- Verified: typecheck, build, `npm test` (12/12), lint, format:check
+  all clean.
+
 - **Dev-chain eslint 10 + SDK 1.30 audit sweep (2026-07-29).** eslint
   ^10.8.0, @eslint/js ^10.0.1, eslint-config-prettier ^10.1.8;
   @modelcontextprotocol/sdk ^1.30.0 with @hono/node-server 2.0.12
@@ -162,6 +188,3 @@ None active. Decisions made during scaffolding:
   fleet-wide dev-chain bump rather than a per-repo fix. Note this
   supersedes the "npm audit 0" claim in the 2026-07-29 dependency entry
   above — the advisory postdates it.
-- qBittorrent client retries once on 403. If a server has a custom
-  rate-limit response that returns 403, this could mask it. Adjust if
-  observed in practice.

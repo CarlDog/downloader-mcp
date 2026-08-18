@@ -9,74 +9,25 @@ interface RequestOptions {
 }
 
 export class QBittorrentClient {
-  private cookie: string | null = null;
-  private loginPromise: Promise<void> | null = null;
-
   constructor(
     private readonly url: string,
-    private readonly username: string,
-    private readonly password: string,
+    private readonly apiKey: string,
   ) {}
-
-  private async ensureLoggedIn(): Promise<void> {
-    if (this.cookie) return;
-    if (this.loginPromise) {
-      await this.loginPromise;
-      return;
-    }
-    this.loginPromise = this.login();
-    try {
-      await this.loginPromise;
-    } finally {
-      this.loginPromise = null;
-    }
-  }
-
-  private async login(): Promise<void> {
-    const url = new URL("/api/v2/auth/login", this.url);
-    const form = new URLSearchParams({
-      username: this.username,
-      password: this.password,
-    });
-    const res = await fetch(url, {
-      method: "POST",
-      body: form,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-    if (!res.ok) {
-      throw new Error(
-        `qBittorrent login failed: ${res.status} ${res.statusText}`,
-      );
-    }
-    const text = await res.text();
-    if (text.trim() !== "Ok.") {
-      throw new Error(`qBittorrent login rejected: ${text.slice(0, 100)}`);
-    }
-    const setCookie = res.headers.get("set-cookie");
-    if (!setCookie) {
-      throw new Error("qBittorrent login: no Set-Cookie header in response");
-    }
-    const match = /SID=([^;]+)/.exec(setCookie);
-    if (!match || !match[1]) {
-      throw new Error("qBittorrent login: SID cookie not found in Set-Cookie");
-    }
-    this.cookie = `SID=${match[1]}`;
-  }
 
   private async request<T>(
     path: string,
     options: RequestOptions = {},
-    retried = false,
   ): Promise<T> {
-    await this.ensureLoggedIn();
     const url = new URL(`/api/v2${path}`, this.url);
     if (options.query) {
       for (const [k, v] of Object.entries(options.query)) {
         url.searchParams.set(k, v);
       }
     }
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.cookie) headers.Cookie = this.cookie;
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      Authorization: `Bearer ${this.apiKey}`,
+    };
     if (options.body) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
@@ -85,10 +36,6 @@ export class QBittorrentClient {
       body: options.body,
       headers,
     });
-    if (res.status === 403 && !retried) {
-      this.cookie = null;
-      return this.request<T>(path, options, true);
-    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(

@@ -11,19 +11,14 @@ const sabKey = process.env.SABNZBD_API_KEY;
 const sabConfig = sabUrl && sabKey ? { url: sabUrl, apiKey: sabKey } : null;
 
 const qbtUrl = process.env.QBITTORRENT_URL;
-const qbtUser = process.env.QBITTORRENT_USERNAME;
-const qbtPass = process.env.QBITTORRENT_PASSWORD;
+const qbtApiKey = process.env.QBITTORRENT_API_KEY;
 const qbtConfig =
-  qbtUrl && qbtUser && qbtPass
-    ? { url: qbtUrl, username: qbtUser, password: qbtPass }
-    : null;
+  qbtUrl && qbtApiKey ? { url: qbtUrl, apiKey: qbtApiKey } : null;
 
 if (!sabConfig && !qbtConfig) {
   console.error("No download clients configured. Set:");
   console.error("  SABnzbd:     SABNZBD_URL + SABNZBD_API_KEY");
-  console.error(
-    "  qBittorrent: QBITTORRENT_URL + QBITTORRENT_USERNAME + QBITTORRENT_PASSWORD",
-  );
+  console.error("  qBittorrent: QBITTORRENT_URL + QBITTORRENT_API_KEY");
   process.exit(1);
 }
 
@@ -37,9 +32,9 @@ Idioms:
 - Tools are prefixed: sabnzbd_*, qbittorrent_*. The visible set indicates which clients the user runs.
 - sabnzbd_queue and qbittorrent_list_torrents are the primary "what's downloading right now" surfaces. Pair with sabnzbd_history / qbittorrent_transfer_info for completed/aggregate state.
 - For qBittorrent, torrents are addressed by their info-hash (the long hex string from qbittorrent_list_torrents). Drill into a single torrent with qbittorrent_get_torrent or qbittorrent_torrent_files.
-- qBittorrent auth uses session cookies internally; the MCP server handles login transparently. The first call after a long idle may trigger a re-login.
+- qBittorrent auth is a static Bearer API key on every request — no session, no login step, no cookie.
 
-Auth: SABnzbd uses an API key (SABNZBD_API_KEY); qBittorrent uses WebUI username/password (QBITTORRENT_USERNAME / QBITTORRENT_PASSWORD).`;
+Auth: SABnzbd uses an API key (SABNZBD_API_KEY); qBittorrent uses an API key (QBITTORRENT_API_KEY, requires qBittorrent >= v5.2.0 / WebAPI >= v2.14.1 — generate it under WebUI options > API Key).`;
 
 function createServer(): McpServer {
   const server = new McpServer(
@@ -60,11 +55,7 @@ function createServer(): McpServer {
   if (qbtConfig) {
     registerQbittorrentTools(
       server,
-      new QBittorrentClient(
-        qbtConfig.url,
-        qbtConfig.username,
-        qbtConfig.password,
-      ),
+      new QBittorrentClient(qbtConfig.url, qbtConfig.apiKey),
     );
   }
   return server;
