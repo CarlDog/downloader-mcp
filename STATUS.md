@@ -16,9 +16,21 @@ error was blocking diagnosis of whatever *is* wrong. Added
 New `src/util.test.ts` (3 tests) exercises it against a real closed
 port (genuine `ECONNREFUSED`, not mocked) and a real local server for
 the happy path, plus a `redactSecrets` regression guard. Verified:
-typecheck, build, test (15/15), lint, format:check all clean. The
-underlying qBittorrent connectivity issue itself is still
-**unresolved** — this only unblocks seeing why.
+typecheck, build, test (15/15), lint, format:check all clean.
+
+The improved error immediately paid off: deployed live, it revealed
+`ECONNREFUSED 172.17.0.1:18080` — the NAS's `QBITTORRENT_URL` was
+pointing at port 18080, which nothing listens on. The real qBittorrent
+WebUI runs on **8081** (via the `gluetun` VPN sidecar in the
+`qbittorrent-vpn` stack) — 18080 was stale, likely left over from
+before qBittorrent moved behind that VPN container. This was an
+operator-side config drift, not a code bug: README/`.env.example`
+already documented `:8081` correctly. Fixed via
+`portainer_set_stack_env` (merge-only, verified the other 3 vars
+survived) and redeployed. Live-verified end-to-end:
+`qbittorrent_version` → `v5.2.2`, `qbittorrent_list_torrents` →
+real torrent list, `sabnzbd_version` → `5.0.4`. Both clients fully
+working on the NAS as of this session.
 
 **2026-08-18 — qBittorrent auth switched from WebUI session-cookie
 login to a static Bearer API key.** qBittorrent v5.2.0 (WebAPI
@@ -33,10 +45,10 @@ README, CLAUDE.md) — this is a breaking config change for any existing
 deployment. Verified: typecheck, build, test (12/12), lint,
 format:check all clean.
 
-Deployed to the NAS since (Portainer git-stack auto-update picked up
-this commit, `QBITTORRENT_API_KEY` set, container healthy) — but the
-qBittorrent client still can't reach its upstream (see the entry
-above). SABnzbd confirmed working live through the same container.
+Deployed to the NAS (Portainer git-stack auto-update picked up this
+commit, `QBITTORRENT_API_KEY` set, container healthy) and now fully
+verified live — see the entry above for the URL fix that was also
+needed.
 
 **2026-08-12 — terminated sessions now answer HTTP 404, not 400.** The
 Streamable HTTP spec (2025-06-18, Session Management §3/§4) makes 404 the
@@ -178,14 +190,6 @@ triage session + fleet-wide auth-hardening audit).
 
 ## Next
 
-- **Diagnose the live qBittorrent connectivity failure.** The deployed
-  container can't reach its configured `QBITTORRENT_URL` (raw fetch
-  failure, cause now surfaced by `fetchWithCause` but not yet
-  observed live). The WebUI itself answers on the LAN
-  (`carldog-nas:8081` → HTTP 403), so this is scoped to the
-  container's path to that URL, or to the configured URL value
-  itself — re-run `qbittorrent_version` and read the improved error
-  message once this fix is deployed.
 - Wire into Claude Desktop and verify tool calls flow through end-to-end
   from the assistant (rather than via curl).
 - Decide on writes (pause/resume/delete/add) — currently out of scope.
