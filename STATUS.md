@@ -4,6 +4,22 @@
 
 ## Phase
 
+**2026-08-18 — fetch failures now surface their real cause.** While
+verifying the qBittorrent API-key deploy live (below) against the real
+NAS instance, `qbittorrent_version` failed with Node/undici's generic
+`fetch failed` — which discards the actual underlying reason
+(DNS/connection/TLS) in `error.cause`. Confirmed the WebUI itself was
+reachable from the LAN (`curl` got a real HTTP 403), so the opaque
+error was blocking diagnosis of whatever *is* wrong. Added
+`fetchWithCause()` in `util.ts` (both clients now route their raw
+`fetch()` call through it) so the next failure will actually say why.
+New `src/util.test.ts` (3 tests) exercises it against a real closed
+port (genuine `ECONNREFUSED`, not mocked) and a real local server for
+the happy path, plus a `redactSecrets` regression guard. Verified:
+typecheck, build, test (15/15), lint, format:check all clean. The
+underlying qBittorrent connectivity issue itself is still
+**unresolved** — this only unblocks seeing why.
+
 **2026-08-18 — qBittorrent auth switched from WebUI session-cookie
 login to a static Bearer API key.** qBittorrent v5.2.0 (WebAPI
 v2.14.1) added native API key auth; `QBittorrentClient` now sends
@@ -15,7 +31,12 @@ alongside the new one. `QBITTORRENT_USERNAME`/`QBITTORRENT_PASSWORD`
 are replaced by `QBITTORRENT_API_KEY` everywhere (env, compose,
 README, CLAUDE.md) — this is a breaking config change for any existing
 deployment. Verified: typecheck, build, test (12/12), lint,
-format:check all clean. Not yet deployed to the NAS.
+format:check all clean.
+
+Deployed to the NAS since (Portainer git-stack auto-update picked up
+this commit, `QBITTORRENT_API_KEY` set, container healthy) — but the
+qBittorrent client still can't reach its upstream (see the entry
+above). SABnzbd confirmed working live through the same container.
 
 **2026-08-12 — terminated sessions now answer HTTP 404, not 400.** The
 Streamable HTTP spec (2025-06-18, Session Management §3/§4) makes 404 the
@@ -122,6 +143,18 @@ triage session + fleet-wide auth-hardening audit).
   functionally verified end-to-end over real HTTP (no/wrong token → 401,
   correct token → passes gate, `/health` stays open).
 
+## Done (fetch-cause diagnostics, 2026-08-18)
+
+- Added `fetchWithCause()` (`util.ts`), a thin wrapper around the raw
+  `fetch()` calls in both clients that rethrows a network-level failure
+  with the underlying `error.cause` message appended, instead of
+  Node/undici's bare `fetch failed`. Discovered live: verifying the
+  qBittorrent API-key switch below hit exactly this opacity.
+- `src/util.test.ts` (new, 3 tests): a genuine `ECONNREFUSED` against a
+  closed local port (not mocked), a real local HTTP server for the
+  happy path, and a `redactSecrets` regression guard.
+- Verified: typecheck, build, test (15/15), lint, format:check all clean.
+
 ## Done (qBittorrent API-key auth, 2026-08-18)
 
 - Replaced `QBittorrentClient`'s session-cookie login (`POST
@@ -145,6 +178,14 @@ triage session + fleet-wide auth-hardening audit).
 
 ## Next
 
+- **Diagnose the live qBittorrent connectivity failure.** The deployed
+  container can't reach its configured `QBITTORRENT_URL` (raw fetch
+  failure, cause now surfaced by `fetchWithCause` but not yet
+  observed live). The WebUI itself answers on the LAN
+  (`carldog-nas:8081` → HTTP 403), so this is scoped to the
+  container's path to that URL, or to the configured URL value
+  itself — re-run `qbittorrent_version` and read the improved error
+  message once this fix is deployed.
 - Wire into Claude Desktop and verify tool calls flow through end-to-end
   from the assistant (rather than via curl).
 - Decide on writes (pause/resume/delete/add) — currently out of scope.

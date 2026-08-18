@@ -16,6 +16,29 @@ const SECRET_PARAM_RE =
  * response before it reaches the tool layer, rather than redacting
  * field-by-field at each call site.
  */
+/**
+ * Wraps fetch so a network-level failure (DNS, connection refused, TLS)
+ * surfaces its underlying cause instead of Node/undici's generic "fetch
+ * failed" — the raw message alone gives an operator nothing to act on.
+ */
+export async function fetchWithCause(
+  input: string | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    const base = err instanceof Error ? err.message : String(err);
+    const cause = err instanceof Error ? err.cause : undefined;
+    const causeMsg =
+      cause instanceof Error ? cause.message : cause ? String(cause) : "";
+    throw new Error(
+      `${base}${causeMsg ? `: ${causeMsg}` : ""} (${String(input)})`,
+      { cause: err },
+    );
+  }
+}
+
 export function redactSecrets<T>(value: T): T {
   if (typeof value === "string") {
     return value.replace(SECRET_PARAM_RE, "$1[REDACTED]") as unknown as T;

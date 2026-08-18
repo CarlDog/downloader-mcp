@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { asText, redactSecrets } from "./util.js";
+import { asText, redactSecrets, fetchWithCause } from "./util.js";
 
 export class SabnzbdClient {
   constructor(
@@ -19,7 +19,9 @@ export class SabnzbdClient {
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, String(v));
     }
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const res = await fetchWithCause(url, {
+      headers: { Accept: "application/json" },
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(

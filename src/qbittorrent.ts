@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { asText, redactSecrets } from "./util.js";
+import { asText, redactSecrets, fetchWithCause } from "./util.js";
 
 interface RequestOptions {
   method?: string;
@@ -31,7 +31,7 @@ export class QBittorrentClient {
     if (options.body) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
-    const res = await fetch(url, {
+    const res = await fetchWithCause(url, {
       method: options.method ?? "GET",
       body: options.body,
       headers,

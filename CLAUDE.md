@@ -48,7 +48,9 @@ optional registration in `src/index.ts` — no inheritance refactor.
   `index.ts` so it can be imported by a test — `index.ts` self-executes on
   import (and `exit(1)`s with no client configured), so nothing in it was
   reachable without booting a server. Covered by `src/mcp-route.test.ts`.
-- `src/util.ts` — single `asText()` helper used by both clients.
+- `src/util.ts` — `asText()`, `redactSecrets()`, and `fetchWithCause()`
+  (wraps `fetch` so a network-level failure surfaces its real cause
+  instead of the generic `fetch failed`), all shared by both clients.
 - `src/sabnzbd.ts` — `SabnzbdClient` + `registerSabnzbdTools`.
 - `src/qbittorrent.ts` — `QBittorrentClient` (static Bearer API-key
   auth) + `registerQbittorrentTools`.
