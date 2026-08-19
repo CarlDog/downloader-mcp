@@ -4,6 +4,7 @@ services:
     pull_policy: always
     container_name: downloader-mcp
     restart: unless-stopped
+    network_mode: bridge
     ports:
       - "${HOST_PORT:-3003}:3000"
     # Enables `host.docker.internal` from inside the container, so URLs
