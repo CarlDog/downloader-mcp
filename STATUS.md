@@ -4,6 +4,17 @@
 
 ## Phase
 
+**2026-08-18 — moved to the shared `bridge` network to relieve an
+exhausted Docker address pool.** The dedicated `downloader-mcp_default`
+network (created automatically because `docker-compose.yml` didn't set
+`network_mode`) was one of ~30 per-stack networks on the NAS, each
+claiming its own subnet from Docker's default address pool; the fleet
+exhausted both built-in fallback pools. `docker-compose.yml` now sets
+`network_mode: bridge`, same as the rest of the single-container fleet
+stacks (this repo has only one container and no need for container-name
+DNS, so `bridge` is safe — see the fleet-wide `docker-deployments.md`
+rule this migration follows). One-line change, redeployed clean.
+
 **2026-08-18 — fetch failures now surface their real cause.** While
 verifying the qBittorrent API-key deploy live (below) against the real
 NAS instance, `qbittorrent_version` failed with Node/undici's generic
