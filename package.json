@@ -1,6 +1,7 @@
 {
-  "name": "downloader-mcp",
+  "name": "@carldog/downloader-mcp",
   "version": "0.1.0",
+  "private": true,
   "license": "MIT",
   "description": "MCP server for download clients (SABnzbd, qBittorrent), packaged as a Docker container",
   "type": "module",
