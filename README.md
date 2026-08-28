@@ -89,10 +89,12 @@ docker run -i --rm \
 
 ## Published image
 
-After each push to `main`, GitHub Actions builds and pushes a multi-arch
-image to GHCR:
+After each push to `main` (docs-only changes excluded), GitHub Actions
+builds and pushes an image to GHCR:
 
-`ghcr.io/carldog/downloader-mcp:latest` (linux/amd64 + linux/arm64)
+`ghcr.io/carldog/downloader-mcp:latest` (linux/amd64 only — every
+deployment target is x86-64; see `docker-publish.yml` for the ARM
+tradeoff if that ever changes)
 
 Pull instead of building locally:
 
