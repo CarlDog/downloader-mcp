@@ -211,6 +211,14 @@ triage session + fleet-wide auth-hardening audit).
 
 ## Next
 
+- **Dogfooding (2026-08-29): `sabnzbd_queue` returned a ~110 KB payload
+  on a busy queue** (a multi-thousand-slot REMUX batch), blowing the
+  caller's token budget for a "what's downloading?" check. Mirror the
+  2026-08-12 `sabnzbd_history` fix: compact-by-default per-slot fields
+  plus a `limit`/paging parameter (`full: true` for the raw payload).
+  Observed live during a NAS triage session; OpenChronicle was
+  unreachable, so the note lives here instead of an OC `mcp-feedback`
+  memory.
 - Wire into Claude Desktop and verify tool calls flow through end-to-end
   from the assistant (rather than via curl).
 - Decide on writes (pause/resume/delete/add) — currently out of scope.
