@@ -27,12 +27,13 @@ const enabled: string[] = [];
 if (sabConfig) enabled.push("SABnzbd");
 if (qbtConfig) enabled.push("qBittorrent");
 
-const INSTRUCTIONS = `MCP server for download clients: SABnzbd (usenet) and qBittorrent (torrents). Either client is optional — only configured ones have their tools registered. Read-only as of v1.
+const INSTRUCTIONS = `MCP server for download clients: SABnzbd (usenet) and qBittorrent (torrents). Either client is optional — only configured ones have their tools registered. Reads are the default; qBittorrent exposes one deliberately constrained, confirm-gated magnet-add mutation.
 
 Idioms:
 - Tools are prefixed: sabnzbd_*, qbittorrent_*. The visible set indicates which clients the user runs.
 - sabnzbd_queue and qbittorrent_list_torrents are the primary "what's downloading right now" surfaces. qbittorrent_list_torrents is compact and paginated by default; use hashes for targeted selection, limit/offset for traversal, and full=true only for deliberate bulk inspection. Pair with sabnzbd_history / qbittorrent_transfer_info for completed/aggregate state.
 - For qBittorrent, torrents are addressed by their info-hash (the long hex string from qbittorrent_list_torrents). Drill into a single torrent with qbittorrent_get_torrent or qbittorrent_torrent_files.
+- qbittorrent_add_torrent accepts one magnet URI, requires confirm=true, and adds it stopped unless start_immediately=true is explicitly requested. Treat an upstream acknowledgement as provisional unless the result says verification=present.
 - qBittorrent auth is a static Bearer API key on every request — no session, no login step, no cookie.
 
 Auth: SABnzbd uses an API key (SABNZBD_API_KEY); qBittorrent uses an API key (QBITTORRENT_API_KEY, requires qBittorrent >= v5.2.0 / WebAPI >= v2.14.1 — generate it under WebUI options > API Key).`;

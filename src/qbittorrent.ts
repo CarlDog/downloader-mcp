@@ -5,7 +5,7 @@ import { asText, redactSecrets, fetchWithCause } from "./util.js";
 interface RequestOptions {
   method?: string;
   query?: Record<string, string>;
-  body?: URLSearchParams;
+  body?: URLSearchParams | FormData;
 }
 
 export const TORRENT_FILTERS = [
@@ -25,6 +25,7 @@ export const TORRENT_FILTERS = [
 
 export const DEFAULT_TORRENT_PAGE_SIZE = 25;
 export const MAX_TORRENT_PAGE_SIZE = 100;
+export const MAX_MAGNET_URI_LENGTH = 8192;
 
 export const COMPACT_TORRENT_FIELDS = [
   "hash",
@@ -68,6 +69,42 @@ export interface TorrentListResult {
   mode: "compact" | "full";
 }
 
+export interface ParsedMagnetUri {
+  uri: string;
+  expectedInfoHash: string | null;
+}
+
+export interface TorrentAddOptions {
+  category?: string;
+  startImmediately?: boolean;
+}
+
+export interface TorrentAddResult {
+  added: boolean;
+  preexisting: boolean;
+  started_immediately: boolean;
+  expected_info_hash: string | null;
+  upstream_status: "acknowledged" | "rejected" | "unknown";
+  upstream_counts: {
+    success: number | null;
+    pending: number | null;
+    failure: number | null;
+  };
+  verification:
+    "preexisting" | "present" | "not_observed" | "not_possible" | "unavailable";
+  torrent: TorrentRecord | null;
+  warning: string | null;
+}
+
+export interface TorrentAddAcknowledgement {
+  status: "acknowledged" | "rejected" | "unknown";
+  counts: {
+    success: number | null;
+    pending: number | null;
+    failure: number | null;
+  };
+}
+
 function pageOptions(options: TorrentListOptions): {
   limit: number;
   offset: number;
@@ -97,6 +134,113 @@ function normalizedHashes(hashes: string[] | undefined): string[] {
     throw new Error("Torrent hashes must be non-empty and may not contain '|'");
   }
   return [...new Set(normalized)];
+}
+
+export function parseMagnetUri(value: string): ParsedMagnetUri {
+  const uri = value.trim();
+  if (uri.length === 0 || uri.length > MAX_MAGNET_URI_LENGTH) {
+    throw new Error(
+      `Magnet URI must contain 1 to ${MAX_MAGNET_URI_LENGTH} characters`,
+    );
+  }
+  if (/[\r\n]/u.test(uri)) {
+    throw new Error("Magnet URI may not contain line breaks");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw new Error("A valid magnet URI is required");
+  }
+  if (parsed.protocol.toLowerCase() !== "magnet:") {
+    throw new Error("Only magnet URIs are accepted");
+  }
+
+  const exactTopics = parsed.searchParams.getAll("xt");
+  const btih = exactTopics.find((topic) =>
+    /^urn:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})$/iu.test(topic),
+  );
+  const btmh = exactTopics.find((topic) =>
+    /^urn:btmh:1220[0-9a-f]{64}$/iu.test(topic),
+  );
+  if (!btih && !btmh) {
+    throw new Error(
+      "Magnet URI must contain a valid BitTorrent v1 or v2 exact topic",
+    );
+  }
+
+  const hexHash = btih?.match(/^urn:btih:([0-9a-f]{40})$/iu)?.[1];
+  return {
+    uri,
+    expectedInfoHash: hexHash?.toLowerCase() ?? null,
+  };
+}
+
+function normalizedCategory(category: string | undefined): string | undefined {
+  if (category === undefined) return undefined;
+  const normalized = category.trim();
+  if (normalized.length === 0 || normalized.length > 100) {
+    throw new Error("Category must contain 1 to 100 characters");
+  }
+  if (
+    [...normalized].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  ) {
+    throw new Error("Category may not contain control characters");
+  }
+  return normalized;
+}
+
+export function buildAddTorrentForm(
+  magnetUri: string,
+  options: TorrentAddOptions = {},
+): FormData {
+  const magnet = parseMagnetUri(magnetUri);
+  const category = normalizedCategory(options.category);
+  const form = new FormData();
+  form.set("urls", magnet.uri);
+  form.set("paused", options.startImmediately === true ? "false" : "true");
+  if (category) form.set("category", category);
+  return form;
+}
+
+function finiteCount(
+  value: Record<string, unknown>,
+  field: string,
+): number | null {
+  const count = value[field];
+  return typeof count === "number" && Number.isFinite(count) ? count : null;
+}
+
+export function summarizeAddAcknowledgement(
+  value: unknown,
+): TorrentAddAcknowledgement {
+  const counts = { success: null, pending: null, failure: null } as {
+    success: number | null;
+    pending: number | null;
+    failure: number | null;
+  };
+  if (typeof value === "string") {
+    const response = value.trim();
+    if (/^fails?\.?$/iu.test(response)) return { status: "rejected", counts };
+    if (/^ok\.?$/iu.test(response)) return { status: "acknowledged", counts };
+    return { status: "unknown", counts };
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { status: "unknown", counts };
+  }
+
+  const record = value as Record<string, unknown>;
+  counts.success = finiteCount(record, "success_count");
+  counts.pending = finiteCount(record, "pending_count");
+  counts.failure = finiteCount(record, "failure_count");
+  const accepted = (counts.success ?? 0) + (counts.pending ?? 0);
+  if (accepted > 0) return { status: "acknowledged", counts };
+  if ((counts.failure ?? 0) > 0) return { status: "rejected", counts };
+  return { status: "unknown", counts };
 }
 
 export function buildTorrentListQuery(
@@ -170,7 +314,7 @@ export class QBittorrentClient {
       Accept: "application/json",
       Authorization: `Bearer ${this.apiKey}`,
     };
-    if (options.body) {
+    if (options.body instanceof URLSearchParams) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
     const res = await fetchWithCause(url, {
@@ -221,6 +365,71 @@ export class QBittorrentClient {
 
   async version(): Promise<unknown> {
     return this.request("/app/version");
+  }
+
+  async addTorrent(
+    magnetUri: string,
+    options: TorrentAddOptions = {},
+  ): Promise<TorrentAddResult> {
+    const magnet = parseMagnetUri(magnetUri);
+    const startedImmediately = options.startImmediately === true;
+    const preexisting = magnet.expectedInfoHash
+      ? await this.getTorrent(magnet.expectedInfoHash)
+      : null;
+    if (preexisting) {
+      return {
+        added: false,
+        preexisting: true,
+        started_immediately: startedImmediately,
+        expected_info_hash: magnet.expectedInfoHash,
+        upstream_status: "unknown",
+        upstream_counts: { success: null, pending: null, failure: null },
+        verification: "preexisting",
+        torrent: compactTorrent(preexisting),
+        warning: "The torrent already existed, so no add request was sent.",
+      };
+    }
+
+    const response = await this.request("/torrents/add", {
+      method: "POST",
+      body: buildAddTorrentForm(magnet.uri, options),
+    });
+    const acknowledgement = summarizeAddAcknowledgement(response);
+    let verification: TorrentAddResult["verification"] = magnet.expectedInfoHash
+      ? "not_observed"
+      : "not_possible";
+    let torrent: TorrentRecord | null = null;
+    if (magnet.expectedInfoHash && acknowledgement.status !== "rejected") {
+      try {
+        const observed = await this.getTorrent(magnet.expectedInfoHash);
+        if (observed) {
+          torrent = compactTorrent(observed);
+          verification = "present";
+        }
+      } catch {
+        verification = "unavailable";
+      }
+    }
+
+    const added =
+      acknowledgement.status !== "rejected" && verification === "present";
+    const warning =
+      verification === "present"
+        ? null
+        : acknowledgement.status === "rejected"
+          ? "qBittorrent rejected the add request."
+          : "qBittorrent did not prove that the torrent was added; verify with qbittorrent_list_torrents before relying on it.";
+    return {
+      added,
+      preexisting: false,
+      started_immediately: startedImmediately,
+      expected_info_hash: magnet.expectedInfoHash,
+      upstream_status: acknowledgement.status,
+      upstream_counts: acknowledgement.counts,
+      verification,
+      torrent,
+      warning,
+    };
   }
 }
 
@@ -330,5 +539,53 @@ export function registerQbittorrentTools(
       inputSchema: {},
     },
     async () => asText(await qbt.version()),
+  );
+
+  server.registerTool(
+    "qbittorrent_add_torrent",
+    {
+      title: "qBittorrent: Add Torrent",
+      description:
+        "Add one validated magnet URI. Requires confirm=true and adds the torrent stopped by default; set start_immediately=true only when download activity should begin immediately. Remote torrent URLs, arbitrary save paths, and bulk input are intentionally unsupported.",
+      inputSchema: {
+        magnet_uri: z
+          .string()
+          .trim()
+          .min(1)
+          .max(MAX_MAGNET_URI_LENGTH)
+          .describe("A BitTorrent v1, v2, or hybrid magnet URI"),
+        category: z
+          .string()
+          .trim()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Optional existing qBittorrent category"),
+        start_immediately: z
+          .boolean()
+          .default(false)
+          .describe("Start downloading immediately instead of adding stopped"),
+        confirm: z
+          .literal(true)
+          .describe("Must be true to authorize this persistent mutation"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ magnet_uri, category, start_immediately, confirm }) => {
+      if (confirm !== true) {
+        throw new Error("confirm=true is required to add a torrent");
+      }
+      return asText(
+        await qbt.addTorrent(magnet_uri, {
+          category,
+          startImmediately: start_immediately,
+        }),
+      );
+    },
   );
 }

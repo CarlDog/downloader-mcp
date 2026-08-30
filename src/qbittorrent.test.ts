@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPACT_TORRENT_FIELDS,
+  buildAddTorrentForm,
   buildTorrentListQuery,
   compactTorrent,
   formatTorrentPage,
+  parseMagnetUri,
+  summarizeAddAcknowledgement,
 } from "./qbittorrent.js";
 
 function torrent(hash: string): Record<string, unknown> {
@@ -99,5 +102,63 @@ describe("formatTorrentPage", () => {
     expect(() => formatTorrentPage(["not-an-object"])).toThrow(
       /malformed torrent record/,
     );
+  });
+});
+
+describe("parseMagnetUri", () => {
+  const hash = "0123456789abcdef0123456789abcdef01234567";
+
+  it("accepts a scoped magnet and extracts a verifiable hexadecimal hash", () => {
+    expect(parseMagnetUri(`magnet:?xt=urn:btih:${hash}&dn=Example`)).toEqual({
+      uri: `magnet:?xt=urn:btih:${hash}&dn=Example`,
+      expectedInfoHash: hash,
+    });
+  });
+
+  it("rejects remote URLs, delimiter injection, and magnets without a hash", () => {
+    expect(() => parseMagnetUri("https://example.test/file.torrent")).toThrow(
+      /Only magnet URIs/,
+    );
+    expect(() =>
+      parseMagnetUri(`magnet:?xt=urn:btih:${hash}\nhttps://example.test`),
+    ).toThrow(/line breaks/);
+    expect(() => parseMagnetUri("magnet:?dn=NoHash")).toThrow(/exact topic/);
+  });
+});
+
+describe("buildAddTorrentForm", () => {
+  const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+
+  it("adds stopped by default and supports an explicit existing category", () => {
+    const form = buildAddTorrentForm(magnet, { category: "linux" });
+    expect(form.get("urls")).toBe(magnet);
+    expect(form.get("paused")).toBe("true");
+    expect(form.get("category")).toBe("linux");
+  });
+
+  it("starts only through an explicit override", () => {
+    const form = buildAddTorrentForm(magnet, { startImmediately: true });
+    expect(form.get("paused")).toBe("false");
+  });
+});
+
+describe("summarizeAddAcknowledgement", () => {
+  it("distinguishes legacy text rejection from acknowledgement", () => {
+    expect(summarizeAddAcknowledgement("Ok.").status).toBe("acknowledged");
+    expect(summarizeAddAcknowledgement("Fails.").status).toBe("rejected");
+  });
+
+  it("reduces newer JSON responses to non-sensitive counts", () => {
+    expect(
+      summarizeAddAcknowledgement({
+        success_count: 1,
+        pending_count: 0,
+        failure_count: 0,
+        added_torrent_ids: ["secret-source-data-is-not-returned"],
+      }),
+    ).toEqual({
+      status: "acknowledged",
+      counts: { success: 1, pending: 0, failure: 0 },
+    });
   });
 });
