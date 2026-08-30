@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   COMPACT_TORRENT_FIELDS,
   DIAGNOSTIC_PREFERENCE_FIELDS,
+  compactTorrentPeer,
   buildAddTorrentForm,
   buildTorrentListQuery,
   compactTorrent,
   formatTorrentPage,
+  formatTorrentPeerPage,
   parseMagnetUri,
   projectDiagnosticPreferences,
   summarizeAddAcknowledgement,
@@ -214,5 +216,106 @@ describe("projectDiagnosticPreferences", () => {
     expect(() => projectDiagnosticPreferences([])).toThrow(
       /malformed application preferences/,
     );
+  });
+});
+
+describe("compactTorrentPeer", () => {
+  const peer = {
+    ip: "203.0.113.10",
+    port: 51413,
+    host_name: "peer.example",
+    peer_id_client: "-CLIENT-",
+    i2p_dest: "sensitive.b32.i2p",
+    files: "/downloads/private/file",
+    client: "ExampleClient 1.0",
+    progress: 0.75,
+    dl_speed: 1024,
+    up_speed: 512,
+    downloaded: 2048,
+    uploaded: 1024,
+    connection: "uTP",
+    flags: "I E H X",
+    flags_desc: "localized verbose descriptions",
+    country: "Example",
+    country_code: "ex",
+  };
+
+  it("normalizes connection evidence while omitting peer identity by default", () => {
+    const result = compactTorrentPeer(peer);
+    expect(result).toMatchObject({
+      client: "ExampleClient 1.0",
+      connection: "uTP",
+      flags: "I E H X",
+      incoming: true,
+      encryption: "traffic",
+      sources: ["dht", "pex"],
+    });
+    for (const field of [
+      "address",
+      "ip",
+      "port",
+      "host_name",
+      "peer_id_client",
+      "i2p_dest",
+      "files",
+      "flags_desc",
+    ]) {
+      expect(result).not.toHaveProperty(field);
+    }
+  });
+
+  it("includes only IP and port through the explicit address opt-in", () => {
+    const result = compactTorrentPeer(peer, true);
+    expect(result.address).toEqual({ ip: "203.0.113.10", port: 51413 });
+    expect(result).not.toHaveProperty("host_name");
+    expect(result).not.toHaveProperty("peer_id_client");
+    expect(result).not.toHaveProperty("i2p_dest");
+    expect(result).not.toHaveProperty("files");
+  });
+});
+
+describe("formatTorrentPeerPage", () => {
+  const response = {
+    rid: 7,
+    full_update: true,
+    peers: {
+      "203.0.113.3:3": { client: "three", flags: "e L" },
+      "203.0.113.1:1": { client: "one", flags: "" },
+      "203.0.113.2:2": { client: "two", flags: "I" },
+    },
+  };
+
+  it("pages a deterministic order and reports exact traversal metadata", () => {
+    expect(formatTorrentPeerPage(response, { limit: 2, offset: 1 })).toEqual({
+      peers: [
+        expect.objectContaining({ client: "two", incoming: true }),
+        expect.objectContaining({
+          client: "three",
+          encryption: "handshake",
+          sources: ["lsd"],
+        }),
+      ],
+      returned: 2,
+      total: 3,
+      offset: 1,
+      limit: 2,
+      has_more: false,
+      next_offset: null,
+      addresses_included: false,
+      response_id: 7,
+      full_update: true,
+    });
+  });
+
+  it("rejects malformed payloads and unbounded pages", () => {
+    expect(() => formatTorrentPeerPage({ peers: [] })).toThrow(
+      /malformed peer map/,
+    );
+    expect(() => formatTorrentPeerPage(response, { limit: 101 })).toThrow(
+      /1 to 100/,
+    );
+    expect(() =>
+      formatTorrentPeerPage({ peers: { bad: "not-an-object" } }),
+    ).toThrow(/malformed peer record/);
   });
 });

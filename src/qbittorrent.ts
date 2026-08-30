@@ -26,6 +26,8 @@ export const TORRENT_FILTERS = [
 export const DEFAULT_TORRENT_PAGE_SIZE = 25;
 export const MAX_TORRENT_PAGE_SIZE = 100;
 export const MAX_MAGNET_URI_LENGTH = 8192;
+export const DEFAULT_PEER_PAGE_SIZE = 25;
+export const MAX_PEER_PAGE_SIZE = 100;
 
 export const DIAGNOSTIC_PREFERENCE_FIELDS = [
   "add_stopped_enabled",
@@ -101,6 +103,25 @@ export interface TorrentListResult {
   has_more: boolean;
   next_offset: number | null;
   mode: "compact" | "full";
+}
+
+export interface TorrentPeerOptions {
+  limit?: number;
+  offset?: number;
+  includeAddresses?: boolean;
+}
+
+export interface TorrentPeerPage {
+  peers: TorrentRecord[];
+  returned: number;
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+  next_offset: number | null;
+  addresses_included: boolean;
+  response_id: number | null;
+  full_update: boolean | null;
 }
 
 export interface ParsedMagnetUri {
@@ -330,6 +351,122 @@ export function projectDiagnosticPreferences(
   return projected;
 }
 
+function peerPageOptions(options: TorrentPeerOptions): {
+  limit: number;
+  offset: number;
+} {
+  const limit = options.limit ?? DEFAULT_PEER_PAGE_SIZE;
+  const offset = options.offset ?? 0;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PEER_PAGE_SIZE) {
+    throw new Error(
+      `Peer page limit must be an integer from 1 to ${MAX_PEER_PAGE_SIZE}`,
+    );
+  }
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("Peer page offset must be a non-negative integer");
+  }
+  return { limit, offset };
+}
+
+function peerFlagTokens(value: unknown): Set<string> {
+  if (typeof value !== "string") return new Set();
+  return new Set(value.split(/\s+/u).filter((flag) => flag.length > 0));
+}
+
+export function compactTorrentPeer(
+  value: unknown,
+  includeAddresses = false,
+): TorrentRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("qBittorrent returned a malformed peer record");
+  }
+  const peer = value as TorrentRecord;
+  const flags = typeof peer.flags === "string" ? peer.flags : "";
+  const tokens = peerFlagTokens(flags);
+  const sources: string[] = [];
+  if (tokens.has("H")) sources.push("dht");
+  if (tokens.has("X")) sources.push("pex");
+  if (tokens.has("L")) sources.push("lsd");
+  const compact: TorrentRecord = {
+    client: peer.client ?? null,
+    progress: peer.progress ?? null,
+    dl_speed: peer.dl_speed ?? null,
+    up_speed: peer.up_speed ?? null,
+    downloaded: peer.downloaded ?? null,
+    uploaded: peer.uploaded ?? null,
+    connection: peer.connection ?? null,
+    flags,
+    incoming: tokens.has("I"),
+    encryption: tokens.has("E")
+      ? "traffic"
+      : tokens.has("e")
+        ? "handshake"
+        : "not_reported",
+    sources,
+    country: peer.country ?? null,
+    country_code: peer.country_code ?? null,
+  };
+  if (includeAddresses) {
+    compact.address = {
+      ip: peer.ip ?? null,
+      port: peer.port ?? null,
+    };
+  }
+  return compact;
+}
+
+export function formatTorrentPeerPage(
+  value: unknown,
+  options: TorrentPeerOptions = {},
+): TorrentPeerPage {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("qBittorrent returned a malformed peer response");
+  }
+  const response = value as Record<string, unknown>;
+  const peersValue = response.peers;
+  if (
+    typeof peersValue !== "object" ||
+    peersValue === null ||
+    Array.isArray(peersValue)
+  ) {
+    throw new Error("qBittorrent returned a malformed peer map");
+  }
+
+  const { limit, offset } = peerPageOptions(options);
+  const entries = Object.entries(peersValue).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const page = entries
+    .slice(offset, offset + limit)
+    .map(([, peer]) => compactTorrentPeer(peer, options.includeAddresses));
+  const nextOffset = offset + page.length;
+  const hasMore = nextOffset < entries.length;
+  return {
+    peers: page,
+    returned: page.length,
+    total: entries.length,
+    offset,
+    limit,
+    has_more: hasMore,
+    next_offset: hasMore ? nextOffset : null,
+    addresses_included: options.includeAddresses === true,
+    response_id:
+      typeof response.rid === "number" && Number.isInteger(response.rid)
+        ? response.rid
+        : null,
+    full_update:
+      typeof response.full_update === "boolean" ? response.full_update : null,
+  };
+}
+
+function normalizedTorrentHash(hash: string): string {
+  const normalized = hash.trim().toLowerCase();
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(normalized)) {
+    throw new Error("Torrent hash must be 40 or 64 hexadecimal characters");
+  }
+  return normalized;
+}
+
 export function formatTorrentPage(
   value: unknown,
   options: TorrentListOptions = {},
@@ -424,6 +561,16 @@ export class QBittorrentClient {
 
   async preferences(): Promise<Record<string, unknown>> {
     return projectDiagnosticPreferences(await this.request("/app/preferences"));
+  }
+
+  async torrentPeers(
+    hash: string,
+    options: TorrentPeerOptions = {},
+  ): Promise<TorrentPeerPage> {
+    const response = await this.request("/sync/torrentPeers", {
+      query: { hash: normalizedTorrentHash(hash), rid: "0" },
+    });
+    return formatTorrentPeerPage(response, options);
   }
 
   async version(): Promise<unknown> {
@@ -609,6 +756,55 @@ export function registerQbittorrentTools(
       },
     },
     async () => asText(await qbt.preferences()),
+  );
+
+  server.registerTool(
+    "qbittorrent_torrent_peers",
+    {
+      title: "qBittorrent: Torrent Peers",
+      description:
+        "List a bounded deterministic page of connected peers for one torrent, including client, transfer activity, transport, incoming direction, encryption evidence, and discovery source. IP address and port are omitted by default and require include_addresses=true; hostnames, peer IDs, I2P destinations, and file paths are never returned.",
+      inputSchema: {
+        hash: z
+          .string()
+          .trim()
+          .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu)
+          .describe("The torrent's 40- or 64-character hexadecimal hash"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PEER_PAGE_SIZE)
+          .default(DEFAULT_PEER_PAGE_SIZE)
+          .describe("Maximum peers to return (default 25, maximum 100)"),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .default(0)
+          .describe("Zero-based offset in the deterministic peer ordering"),
+        include_addresses: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Explicitly include each peer's potentially sensitive IP address and port",
+          ),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ hash, limit, offset, include_addresses }) =>
+      asText(
+        await qbt.torrentPeers(hash, {
+          limit,
+          offset,
+          includeAddresses: include_addresses,
+        }),
+      ),
   );
 
   server.registerTool(
