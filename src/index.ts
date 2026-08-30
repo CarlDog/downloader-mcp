@@ -31,7 +31,7 @@ const INSTRUCTIONS = `MCP server for download clients: SABnzbd (usenet) and qBit
 
 Idioms:
 - Tools are prefixed: sabnzbd_*, qbittorrent_*. The visible set indicates which clients the user runs.
-- sabnzbd_queue and qbittorrent_list_torrents are the primary "what's downloading right now" surfaces. Pair with sabnzbd_history / qbittorrent_transfer_info for completed/aggregate state.
+- sabnzbd_queue and qbittorrent_list_torrents are the primary "what's downloading right now" surfaces. qbittorrent_list_torrents is compact and paginated by default; use hashes for targeted selection, limit/offset for traversal, and full=true only for deliberate bulk inspection. Pair with sabnzbd_history / qbittorrent_transfer_info for completed/aggregate state.
 - For qBittorrent, torrents are addressed by their info-hash (the long hex string from qbittorrent_list_torrents). Drill into a single torrent with qbittorrent_get_torrent or qbittorrent_torrent_files.
 - qBittorrent auth is a static Bearer API key on every request — no session, no login step, no cookie.
 
