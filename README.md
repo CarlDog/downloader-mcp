@@ -55,7 +55,7 @@ API keys are found in each app's settings:
 
 At least one client must be configured or the server exits with an error.
 
-### HTTP transport hardening (optional)
+### HTTP transport hardening
 
 When running in HTTP mode (`MCP_PORT` set), you can enable bearer-token
 auth and DNS-rebinding protection with:
@@ -65,9 +65,10 @@ auth and DNS-rebinding protection with:
 | `MCP_AUTH_TOKEN` | Shared secret. When set, every `/mcp` request must carry `Authorization: Bearer <token>`; `/health` stays open for the docker healthcheck. |
 | `MCP_ALLOWED_HOSTS` | Comma-separated `host[:port]` list. When set, requests whose `Host` header isn't in the list are rejected. |
 
-Both are opt-in and fail-soft: unset keeps prior behavior (unauthenticated,
-any Host accepted) so an existing deployment isn't broken by an upgrade,
-and the server logs a one-line startup warning recommending each one.
+The provided Compose deployment requires both controls so a missing stack
+variable cannot silently expose the MCP endpoint. A direct HTTP-mode start
+outside Compose remains backward compatible: if either variable is unset, the
+server logs a startup warning and leaves that control disabled.
 
 Recommended `MCP_AUTH_TOKEN`: a random secret, e.g. `openssl rand -hex 32`,
 passed by clients as `Authorization: Bearer <token>`.
@@ -116,6 +117,8 @@ image from `ghcr.io/carldog/downloader-mcp:latest`.
 export SABNZBD_URL=http://192.168.1.50:8080; export SABNZBD_API_KEY=...
 export QBITTORRENT_URL=http://192.168.1.50:8081
 export QBITTORRENT_API_KEY=...
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+export MCP_ALLOWED_HOSTS="192.168.1.50:3003"
 export HOST_PORT=3003  # optional, defaults to 3003
 
 docker compose up
@@ -129,7 +132,7 @@ The MCP endpoint will be at `http://<host>:${HOST_PORT}/mcp`.
 2. Repository URL: `https://github.com/CarlDog/downloader-mcp`
 3. Compose path: `docker-compose.yml`
 4. Environment variables: set whichever client credentials apply, plus
-   optionally `HOST_PORT`.
+   `MCP_AUTH_TOKEN` and `MCP_ALLOWED_HOSTS`. Optionally set `HOST_PORT`.
 5. Deploy. Healthcheck reaches green within ~10 seconds.
 
 ## Use with Claude Desktop

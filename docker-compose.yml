@@ -15,14 +15,12 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       MCP_PORT: "3000"
-      # Recommended: shared bearer token required on /mcp (not /health).
-      # Unset accepts unauthenticated requests — fine on a fully trusted
-      # LAN, not otherwise. Generate one with e.g. `openssl rand -hex 32`.
-      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-}"
-      # Recommended: enable DNS-rebinding protection by listing the
-      # host[:port] values clients actually use to reach this server
-      # (Host header validation). Unset = protection off (warned at start).
-      MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-}"
+      # Required for HTTP deployments: bearer auth protects /mcp while
+      # /health remains open for the container healthcheck.
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN}"
+      # Required for HTTP deployments: comma-separated host[:port] values
+      # clients use to reach this server (Host header validation).
+      MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:?set MCP_ALLOWED_HOSTS}"
       # Idle-session eviction threshold (default 30 min). Was a bare constant
       # in source with nothing for compose to expose (docker-deployments.md
       # §10); now env-tunable from Portainer without a rebuild.
