@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPACT_TORRENT_FIELDS,
+  DIAGNOSTIC_PREFERENCE_FIELDS,
   buildAddTorrentForm,
   buildTorrentListQuery,
   compactTorrent,
   formatTorrentPage,
   parseMagnetUri,
+  projectDiagnosticPreferences,
   summarizeAddAcknowledgement,
 } from "./qbittorrent.js";
 
@@ -160,5 +162,57 @@ describe("summarizeAddAcknowledgement", () => {
       status: "acknowledged",
       counts: { success: 1, pending: 0, failure: 0 },
     });
+  });
+});
+
+describe("projectDiagnosticPreferences", () => {
+  it("returns a stable diagnostic allowlist with a normalized encryption mode", () => {
+    const result = projectDiagnosticPreferences({
+      dht: true,
+      pex: true,
+      encryption: 1,
+      current_network_interface: "tun0",
+      proxy_bittorrent: true,
+    });
+
+    expect(Object.keys(result)).toEqual([
+      ...DIAGNOSTIC_PREFERENCE_FIELDS,
+      "encryption_mode",
+    ]);
+    expect(result.dht).toBe(true);
+    expect(result.encryption_mode).toBe("require");
+    expect(result.lsd).toBeNull();
+  });
+
+  it("never projects credentials, addresses, paths, or WebUI material", () => {
+    const result = projectDiagnosticPreferences({
+      proxy_ip: "proxy.internal",
+      proxy_port: 8080,
+      proxy_username: "operator",
+      proxy_password: "credential",
+      save_path: "/downloads",
+      current_interface_address: "10.0.0.2",
+      web_ui_api_key: "credential",
+      mail_notification_password: "credential",
+    });
+
+    for (const field of [
+      "proxy_ip",
+      "proxy_port",
+      "proxy_username",
+      "proxy_password",
+      "save_path",
+      "current_interface_address",
+      "web_ui_api_key",
+      "mail_notification_password",
+    ]) {
+      expect(result).not.toHaveProperty(field);
+    }
+  });
+
+  it("fails closed when qBittorrent does not return an object", () => {
+    expect(() => projectDiagnosticPreferences([])).toThrow(
+      /malformed application preferences/,
+    );
   });
 });

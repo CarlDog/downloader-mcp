@@ -27,6 +27,40 @@ export const DEFAULT_TORRENT_PAGE_SIZE = 25;
 export const MAX_TORRENT_PAGE_SIZE = 100;
 export const MAX_MAGNET_URI_LENGTH = 8192;
 
+export const DIAGNOSTIC_PREFERENCE_FIELDS = [
+  "add_stopped_enabled",
+  "start_paused_enabled",
+  "dht",
+  "pex",
+  "lsd",
+  "encryption",
+  "anonymous_mode",
+  "bittorrent_protocol",
+  "listen_port",
+  "upnp",
+  "random_port",
+  "current_network_interface",
+  "current_interface_name",
+  "proxy_type",
+  "proxy_bittorrent",
+  "proxy_peer_connections",
+  "proxy_hostname_lookup",
+  "queueing_enabled",
+  "max_active_downloads",
+  "max_active_uploads",
+  "max_active_torrents",
+  "dl_limit",
+  "up_limit",
+  "alt_dl_limit",
+  "alt_up_limit",
+  "limit_utp_rate",
+  "limit_tcp_overhead",
+  "limit_lan_peers",
+  "ssrf_mitigation",
+  "validate_https_tracker_certificate",
+  "resolve_peer_countries",
+] as const;
+
 export const COMPACT_TORRENT_FIELDS = [
   "hash",
   "name",
@@ -271,6 +305,31 @@ export function compactTorrent(value: unknown): TorrentRecord {
   );
 }
 
+export function projectDiagnosticPreferences(
+  value: unknown,
+): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("qBittorrent returned malformed application preferences");
+  }
+  const preferences = value as Record<string, unknown>;
+  const projected = Object.fromEntries(
+    DIAGNOSTIC_PREFERENCE_FIELDS.map((field) => [
+      field,
+      preferences[field] ?? null,
+    ]),
+  );
+  const encryption = preferences.encryption;
+  projected.encryption_mode =
+    encryption === 0
+      ? "allow"
+      : encryption === 1
+        ? "require"
+        : encryption === 2
+          ? "disable"
+          : null;
+  return projected;
+}
+
 export function formatTorrentPage(
   value: unknown,
   options: TorrentListOptions = {},
@@ -361,6 +420,10 @@ export class QBittorrentClient {
 
   async categories(): Promise<unknown> {
     return this.request("/torrents/categories");
+  }
+
+  async preferences(): Promise<Record<string, unknown>> {
+    return projectDiagnosticPreferences(await this.request("/app/preferences"));
   }
 
   async version(): Promise<unknown> {
@@ -529,6 +592,23 @@ export function registerQbittorrentTools(
       inputSchema: {},
     },
     async () => asText(await qbt.categories()),
+  );
+
+  server.registerTool(
+    "qbittorrent_preferences",
+    {
+      title: "qBittorrent: Diagnostic Preferences",
+      description:
+        "Get a fixed, non-sensitive projection of qBittorrent transport, discovery, encryption, proxy-routing, queue, and rate-limit preferences. Credential, filesystem-path, host-address, notification, and WebUI fields are always omitted; there is intentionally no full-output mode.",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async () => asText(await qbt.preferences()),
   );
 
   server.registerTool(
