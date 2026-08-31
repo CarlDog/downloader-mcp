@@ -4,6 +4,7 @@ import {
   DIAGNOSTIC_PREFERENCE_FIELDS,
   compactTorrentPeer,
   buildAddTorrentForm,
+  buildTorrentStateChangeRequest,
   buildTorrentListQuery,
   compactTorrent,
   formatTorrentPage,
@@ -11,6 +12,7 @@ import {
   parseMagnetUri,
   projectDiagnosticPreferences,
   summarizeAddAcknowledgement,
+  verifyTorrentStates,
 } from "./qbittorrent.js";
 
 function torrent(hash: string): Record<string, unknown> {
@@ -317,5 +319,84 @@ describe("formatTorrentPeerPage", () => {
     expect(() =>
       formatTorrentPeerPage({ peers: { bad: "not-an-object" } }),
     ).toThrow(/malformed peer record/);
+  });
+});
+
+describe("buildTorrentStateChangeRequest", () => {
+  const first = "0123456789abcdef0123456789abcdef01234567";
+  const second = "89abcdef0123456789abcdef0123456789abcdef";
+
+  it("uses qBittorrent 5 stop/start routes with bounded exact hashes", () => {
+    const stop = buildTorrentStateChangeRequest("stop", [
+      first.toUpperCase(),
+      second,
+      first,
+    ]);
+    expect(stop.path).toBe("/torrents/stop");
+    expect(stop.hashes).toEqual([first, second]);
+    expect(stop.body.get("hashes")).toBe(`${first}|${second}`);
+    expect(buildTorrentStateChangeRequest("start", [first]).path).toBe(
+      "/torrents/start",
+    );
+  });
+
+  it("rejects all-targeting, malformed hashes, and unbounded batches", () => {
+    expect(() => buildTorrentStateChangeRequest("stop", ["all"])).toThrow(
+      /40 or 64 hexadecimal/,
+    );
+    expect(() => buildTorrentStateChangeRequest("stop", ["abc"])).toThrow(
+      /40 or 64 hexadecimal/,
+    );
+    expect(() => buildTorrentStateChangeRequest("stop", [])).toThrow(
+      /1 to 100/,
+    );
+    expect(() =>
+      buildTorrentStateChangeRequest("stop", Array(101).fill(first)),
+    ).toThrow(/1 to 100/);
+  });
+});
+
+describe("verifyTorrentStates", () => {
+  const first = "0123456789abcdef0123456789abcdef01234567";
+  const second = "89abcdef0123456789abcdef0123456789abcdef";
+
+  it("requires every stop target to be observed in a stopped state", () => {
+    expect(
+      verifyTorrentStates(
+        "stop",
+        [first, second],
+        [
+          { hash: first, state: "stoppedDL" },
+          { hash: second, state: "stoppedUP" },
+        ],
+      ),
+    ).toEqual({
+      observed: [
+        { hash: first, state: "stoppedDL" },
+        { hash: second, state: "stoppedUP" },
+      ],
+      missing_hashes: [],
+      verified: true,
+    });
+  });
+
+  it("treats missing, stale, and malformed verification as unproven", () => {
+    expect(
+      verifyTorrentStates(
+        "start",
+        [first, second],
+        [{ hash: first, state: "downloading" }],
+      ),
+    ).toMatchObject({ missing_hashes: [second], verified: false });
+    expect(
+      verifyTorrentStates(
+        "start",
+        [first],
+        [{ hash: first, state: "stoppedDL" }],
+      ).verified,
+    ).toBe(false);
+    expect(() => verifyTorrentStates("stop", [first], {})).toThrow(
+      /malformed state-verification list/,
+    );
   });
 });

@@ -36,6 +36,7 @@ Idioms:
 - qbittorrent_preferences exposes a fixed diagnostic allowlist for transport, peer discovery, encryption, queueing, and proxy-routing behavior; sensitive upstream preference fields are never returned.
 - qbittorrent_torrent_peers provides bounded peer diagnostics with normalized incoming/encryption/discovery evidence. Peer IP and port require include_addresses=true; stronger peer identifiers and file paths are never exposed.
 - qbittorrent_add_torrent accepts one magnet URI, requires confirm=true, and adds it stopped unless start_immediately=true is explicitly requested. Treat an upstream acknowledgement as provisional unless the result says verification=present.
+- qbittorrent_stop_torrents and qbittorrent_start_torrents require confirm=true and exact bounded hash lists. They reject missing targets before mutation, never support the upstream all-target shortcut, and distinguish acknowledgement from verified state.
 - qBittorrent auth is a static Bearer API key on every request — no session, no login step, no cookie.
 
 Auth: SABnzbd uses an API key (SABNZBD_API_KEY); qBittorrent uses an API key (QBITTORRENT_API_KEY, requires qBittorrent >= v5.2.0 / WebAPI >= v2.14.1 — generate it under WebUI options > API Key).`;

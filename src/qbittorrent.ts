@@ -28,6 +28,7 @@ export const MAX_TORRENT_PAGE_SIZE = 100;
 export const MAX_MAGNET_URI_LENGTH = 8192;
 export const DEFAULT_PEER_PAGE_SIZE = 25;
 export const MAX_PEER_PAGE_SIZE = 100;
+export const MAX_TORRENT_STATE_TARGETS = 100;
 
 export const DIAGNOSTIC_PREFERENCE_FIELDS = [
   "add_stopped_enabled",
@@ -122,6 +123,21 @@ export interface TorrentPeerPage {
   addresses_included: boolean;
   response_id: number | null;
   full_update: boolean | null;
+}
+
+export type TorrentStateAction = "stop" | "start";
+
+export interface TorrentStateVerification {
+  observed: Array<{ hash: string; state: string | null }>;
+  missing_hashes: string[];
+  verified: boolean;
+}
+
+export interface TorrentStateChangeResult extends TorrentStateVerification {
+  action: TorrentStateAction;
+  requested: number;
+  upstream_acknowledged: true;
+  warning: string | null;
 }
 
 export interface ParsedMagnetUri {
@@ -467,6 +483,64 @@ function normalizedTorrentHash(hash: string): string {
   return normalized;
 }
 
+export function buildTorrentStateChangeRequest(
+  action: TorrentStateAction,
+  hashes: string[],
+): { path: string; body: URLSearchParams; hashes: string[] } {
+  if (hashes.length < 1 || hashes.length > MAX_TORRENT_STATE_TARGETS) {
+    throw new Error(
+      `State changes require 1 to ${MAX_TORRENT_STATE_TARGETS} torrent hashes`,
+    );
+  }
+  const normalized = [
+    ...new Set(hashes.map((hash) => normalizedTorrentHash(hash))),
+  ];
+  const body = new URLSearchParams();
+  body.set("hashes", normalized.join("|"));
+  return { path: `/torrents/${action}`, body, hashes: normalized };
+}
+
+function stateMatchesAction(
+  action: TorrentStateAction,
+  state: string | null,
+): boolean {
+  if (state === null) return false;
+  const stopped = /^(?:stopped|paused)/u.test(state.toLowerCase());
+  return action === "stop" ? stopped : !stopped;
+}
+
+export function verifyTorrentStates(
+  action: TorrentStateAction,
+  requestedHashes: string[],
+  torrents: unknown,
+): TorrentStateVerification {
+  if (!Array.isArray(torrents)) {
+    throw new Error("qBittorrent returned a malformed state-verification list");
+  }
+  const byHash = new Map<string, string | null>();
+  for (const value of torrents) {
+    const torrent = asTorrentRecord(value);
+    if (typeof torrent.hash !== "string") {
+      throw new Error("qBittorrent returned a torrent without a hash");
+    }
+    byHash.set(
+      torrent.hash.toLowerCase(),
+      typeof torrent.state === "string" ? torrent.state : null,
+    );
+  }
+  const observed = requestedHashes
+    .filter((hash) => byHash.has(hash))
+    .map((hash) => ({ hash, state: byHash.get(hash) ?? null }));
+  const missingHashes = requestedHashes.filter((hash) => !byHash.has(hash));
+  return {
+    observed,
+    missing_hashes: missingHashes,
+    verified:
+      missingHashes.length === 0 &&
+      observed.every(({ state }) => stateMatchesAction(action, state)),
+  };
+}
+
 export function formatTorrentPage(
   value: unknown,
   options: TorrentListOptions = {},
@@ -571,6 +645,68 @@ export class QBittorrentClient {
       query: { hash: normalizedTorrentHash(hash), rid: "0" },
     });
     return formatTorrentPeerPage(response, options);
+  }
+
+  async changeTorrentState(
+    action: TorrentStateAction,
+    hashes: string[],
+  ): Promise<TorrentStateChangeResult> {
+    const request = buildTorrentStateChangeRequest(action, hashes);
+    const before = await this.listTorrents({
+      hashes: request.hashes,
+      limit: request.hashes.length,
+    });
+    const beforeHashes = new Set(
+      before.torrents
+        .map((torrent) => torrent.hash)
+        .filter((hash): hash is string => typeof hash === "string")
+        .map((hash) => hash.toLowerCase()),
+    );
+    const missingBefore = request.hashes.filter(
+      (hash) => !beforeHashes.has(hash),
+    );
+    if (missingBefore.length > 0) {
+      throw new Error(
+        `Refusing a partial ${action}: ${missingBefore.length} of ${request.hashes.length} requested torrent hashes do not exist`,
+      );
+    }
+
+    await this.request(request.path, {
+      method: "POST",
+      body: request.body,
+    });
+
+    try {
+      const after = await this.listTorrents({
+        hashes: request.hashes,
+        limit: request.hashes.length,
+      });
+      const verification = verifyTorrentStates(
+        action,
+        request.hashes,
+        after.torrents,
+      );
+      return {
+        action,
+        requested: request.hashes.length,
+        upstream_acknowledged: true,
+        ...verification,
+        warning: verification.verified
+          ? null
+          : "qBittorrent acknowledged the request, but the immediate state read did not verify every target; inspect the returned states before relying on completion.",
+      };
+    } catch {
+      return {
+        action,
+        requested: request.hashes.length,
+        upstream_acknowledged: true,
+        observed: [],
+        missing_hashes: [],
+        verified: false,
+        warning:
+          "qBittorrent acknowledged the request, but post-change verification was unavailable.",
+      };
+    }
   }
 
   async version(): Promise<unknown> {
@@ -805,6 +941,68 @@ export function registerQbittorrentTools(
           includeAddresses: include_addresses,
         }),
       ),
+  );
+
+  const stateChangeInputSchema = {
+    hashes: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu),
+      )
+      .min(1)
+      .max(MAX_TORRENT_STATE_TARGETS)
+      .describe(
+        "Exact torrent hashes only; bulk 'all' targeting is intentionally unsupported",
+      ),
+    confirm: z
+      .literal(true)
+      .describe("Must be true to authorize the requested state change"),
+  };
+
+  server.registerTool(
+    "qbittorrent_stop_torrents",
+    {
+      title: "qBittorrent: Stop Torrents",
+      description:
+        "Stop 1–100 explicitly identified torrents. Requires confirm=true, rejects missing targets before mutation, never accepts the qBittorrent 'all' shortcut, and reports post-change state verification separately from HTTP acknowledgement.",
+      inputSchema: stateChangeInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ hashes, confirm }) => {
+      if (confirm !== true) {
+        throw new Error("confirm=true is required to stop torrents");
+      }
+      return asText(await qbt.changeTorrentState("stop", hashes));
+    },
+  );
+
+  server.registerTool(
+    "qbittorrent_start_torrents",
+    {
+      title: "qBittorrent: Start Torrents",
+      description:
+        "Start 1–100 explicitly identified torrents. Requires confirm=true because it can initiate network and disk activity, rejects missing targets before mutation, never accepts the qBittorrent 'all' shortcut, and reports post-change state verification separately from HTTP acknowledgement.",
+      inputSchema: stateChangeInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ hashes, confirm }) => {
+      if (confirm !== true) {
+        throw new Error("confirm=true is required to start torrents");
+      }
+      return asText(await qbt.changeTorrentState("start", hashes));
+    },
   );
 
   server.registerTool(
