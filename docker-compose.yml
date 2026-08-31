@@ -18,8 +18,11 @@ services:
       # Required for HTTP deployments: bearer auth protects /mcp while
       # /health remains open for the container healthcheck.
       MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN}"
-      # Required for HTTP deployments: comma-separated host[:port] values
-      # clients use to reach this server (Host header validation).
+      # Required for HTTP deployments: comma-separated bare hostnames clients
+      # use to reach this server (Host header validation, port-independent).
+      # Fleet-canonical value: localhost,127.0.0.1,[::1],your-nas,
+      # host.docker.internal. A host:port entry also still matches (the port
+      # is ignored) for compatibility with an old-style deployed value.
       MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:?set MCP_ALLOWED_HOSTS}"
       # Idle-session eviction threshold (default 30 min). Was a bare constant
       # in source with nothing for compose to expose (docker-deployments.md

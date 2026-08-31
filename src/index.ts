@@ -76,9 +76,10 @@ if (portStr && (port === null || Number.isNaN(port))) {
 }
 
 // DNS-rebinding protection (opt-in, fail-soft). When MCP_ALLOWED_HOSTS is
-// set (comma-separated host[:port] list), the HTTP transport validates the
-// Host header against it. When unset, behavior is unchanged so existing LAN
-// deployments keep working — but we warn at startup.
+// set (comma-separated bare hostnames — a host:port entry also works, the
+// port is ignored), the HTTP transport validates the Host header against it,
+// hostname-only and port-independent. When unset, behavior is unchanged so
+// existing LAN deployments keep working — but we warn at startup.
 const allowedHostsStr = process.env.MCP_ALLOWED_HOSTS;
 const allowedHosts = allowedHostsStr
   ? allowedHostsStr

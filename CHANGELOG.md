@@ -14,6 +14,19 @@ after the fact.
 
 ### Changed
 
+- **`MCP_ALLOWED_HOSTS` matching is now hostname-only and port-independent,
+  aligned with the rest of the fleet.** Host checking was previously
+  delegated to the MCP SDK transport's `enableDnsRebindingProtection`,
+  which (SDK 1.30.0) does an exact match on the full raw `Host` header
+  including the port — so a bare hostname entry could never match a real
+  `host:port` request, the same bug Botify's fix closed. Host checking is
+  now hand-rolled middleware, runs before bearer auth (the cheaper,
+  no-crypto check first) and before session dispatch (previously an
+  unknown session's 404 could win over a disallowed host's rejection,
+  since the SDK's check only engaged inside an existing transport), and
+  uses URL-authority parsing so bracketed IPv6 like `[::1]` works. A
+  `host:port` allowlist entry still matches — the port is ignored — so an
+  already-deployed value keeps working without an env change.
 - **Package renamed to `@carldog/downloader-mcp`.** The unscoped name
   `downloader-mcp` was still free, but three fleet repos had already lost
   theirs to unrelated packages; a scope is reserved to the account, so no

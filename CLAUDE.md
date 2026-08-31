@@ -162,8 +162,9 @@ credentials and no live upstream.
   Express listener and asserts the status contract over the wire: an unknown
   or swept session answers **404** (never 400, which leaves a client wedged
   after a routine eviction), a non-initialize request with no session
-  answers 400, bearer auth is checked *before* session handling, and the
-  Host allowlist matches the full `host:port`.
+  answers 400, the Host allowlist is checked before bearer auth and before
+  session handling, and Host matching is hostname-only and
+  port-independent (bracketed IPv6 included).
 
 `npm run typecheck` uses `tsconfig.typecheck.json`, which unlike the build
 config includes `*.test.ts` — vitest transpiles without typechecking, so

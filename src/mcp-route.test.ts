@@ -15,18 +15,22 @@
 // caught that. This does.
 //
 // Ported from the fleet-canonical src/shared/http-transport.test.ts, adapted
-// to downloader-mcp's own contract: JSON-RPC error envelopes (not bare
-// `{ error }`), and a Host allowlist delegated to the SDK transport's
-// DNS-rebinding protection rather than enforced in middleware. Those
-// differences are the reason this repo keeps its own route rather than
-// adopting the shared module.
+// to downloader-mcp's own contract: JSON-RPC error envelopes on every
+// rejection (not the shared module's bare `{ error }`). Host matching itself
+// (hostname-only, port-independent, bracketed-IPv6-aware, checked before auth
+// and before session dispatch) now uses the same URL-authority parser as the
+// rest of the fleet — see hostnameFromAuthority in ./mcp-route.ts.
 
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, test } from "vitest";
-import { mountMcpRoute, type McpRouteOptions } from "./mcp-route.js";
+import {
+  hostnameFromAuthority,
+  mountMcpRoute,
+  type McpRouteOptions,
+} from "./mcp-route.js";
 
 const ACCEPT = "application/json, text/event-stream";
 const UNKNOWN_SESSION = "00000000-0000-0000-0000-000000000000";
@@ -44,35 +48,22 @@ const INIT_BODY = {
 
 type Harness = { url: string; dispose: () => Promise<void> };
 
-/**
- * `allowedHosts` may be a function of the bound port, because the SDK matches
- * the full `host:port` and the port is ephemeral.
- */
-type StartOptions = Partial<Omit<McpRouteOptions, "allowedHosts">> & {
-  allowedHosts?: string[] | ((port: number) => string[]);
-};
-
 const live: Harness[] = [];
 
-async function start(opts: StartOptions = {}): Promise<Harness> {
+async function start(opts: Partial<McpRouteOptions> = {}): Promise<Harness> {
   const app = express();
   app.use(express.json());
 
-  // Listen first so the ephemeral port is known before the route is mounted.
-  // Express resolves routes per request, so registering after listen is fine.
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });
   const { port } = server.address() as AddressInfo;
 
-  const { allowedHosts, ...rest } = opts;
   const mcp = mountMcpRoute(app, "/mcp", {
     createServer: () =>
       new McpServer({ name: "mcp-route-test", version: "0.0.0" }),
     sessionIdleMs: 60_000,
-    ...rest,
-    allowedHosts:
-      typeof allowedHosts === "function" ? allowedHosts(port) : allowedHosts,
+    ...opts,
   });
 
   const harness: Harness = {
@@ -228,7 +219,7 @@ describe("hardening is unchanged", () => {
   });
 
   test("a host outside the allowlist answers 403", async () => {
-    const { url } = await start({ allowedHosts: ["allowed.example:1234"] });
+    const { url } = await start({ allowedHosts: ["allowed.example"] });
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", accept: ACCEPT },
@@ -239,34 +230,55 @@ describe("hardening is unchanged", () => {
     expect(body.error?.code).toBe(-32000);
   });
 
-  test("an allow-listed host passes through", async () => {
-    const { url } = await start({
-      allowedHosts: (port) => [`127.0.0.1:${port}`],
-    });
+  test("a bare-hostname allowlist entry matches the request regardless of port", async () => {
+    // The client always dials `127.0.0.1:<ephemeral port>`; the allowlist
+    // entry has no port at all. Fleet-standard MCP_ALLOWED_HOSTS contract.
+    const { url } = await start({ allowedHosts: ["127.0.0.1"] });
     expect(await initialize(url)).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
-  test("the host allowlist includes the port, so a bare hostname is rejected", async () => {
-    // Pins the SDK's exact `host:port` match. A relaxed hostname-only compare
-    // would let any port through and silently widen the allowlist.
-    const { url } = await start({ allowedHosts: ["127.0.0.1"] });
+  test("a host:port allowlist entry still matches — the port is ignored", async () => {
+    // Migration compatibility: a stack env not yet updated to the port-less
+    // canonical form must keep working unchanged. 9999 deliberately does NOT
+    // match the real ephemeral listen port, to prove it plays no role.
+    const { url } = await start({ allowedHosts: ["127.0.0.1:9999"] });
+    expect(await initialize(url)).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  test("host check happens before session handling", async () => {
+    // An unknown session must not leak its 404 to a disallowed host — the
+    // 403 must win. This inverts the pre-alignment behavior, where the Host
+    // check lived on the SDK transport and an unknown session never reached
+    // one, so 404 won over 403.
+    const { url } = await start({ allowedHosts: ["allowed.example"] });
+    const res = await callWithSession(url, UNKNOWN_SESSION);
+    expect(res.status).toBe(403);
+    await res.body?.cancel();
+  });
+
+  test("host check happens before bearer auth", async () => {
+    // The cheap, no-crypto rejection should win over a 401 — Botify
+    // precedent (2026-08-30). Wrong host AND wrong token: 403, not 401.
+    const { url } = await start({
+      allowedHosts: ["allowed.example"],
+      authToken: "correct-horse",
+    });
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: ACCEPT },
+      headers: {
+        "content-type": "application/json",
+        accept: ACCEPT,
+        authorization: "Bearer battery-staple",
+      },
       body: JSON.stringify(INIT_BODY),
     });
     expect(res.status).toBe(403);
     await res.body?.cancel();
   });
 
-  test("an unknown session is answered before any host check", async () => {
-    // Documents a real ordering consequence of delegating the Host check to
-    // the SDK transport: protection lives on the transport, and an unknown
-    // session never reaches one, so the 404 wins over the 403. Auth still
-    // precedes both (see above) — that is the check that must not leak.
-    const { url } = await start({ allowedHosts: ["allowed.example:1234"] });
-    const res = await callWithSession(url, UNKNOWN_SESSION);
-    expect(res.status).toBe(404);
-    await res.body?.cancel();
+  test("hostnameFromAuthority parses a bracketed IPv6 host independently of its port", () => {
+    expect(hostnameFromAuthority("[::1]:3003")).toBe("[::1]");
+    expect(hostnameFromAuthority("your-nas:3003")).toBe("your-nas");
+    expect(hostnameFromAuthority("your-nas")).toBe("your-nas");
   });
 });
