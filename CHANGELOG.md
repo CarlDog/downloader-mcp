@@ -19,14 +19,25 @@ after the fact.
   delegated to the MCP SDK transport's `enableDnsRebindingProtection`,
   which (SDK 1.30.0) does an exact match on the full raw `Host` header
   including the port — so a bare hostname entry could never match a real
-  `host:port` request, the same bug Botify's fix closed. Host checking is
-  now hand-rolled middleware, runs before bearer auth (the cheaper,
+  `host:port` request, the same bug Botify's fix closed. Host/Origin
+  checking now delegates to the fleet-canonical `src/shared/
+  mcp-environment.ts` (`requestAuthorityAllowed`, the same module ported
+  into kindroid-mcp/servarr-mcp/filesystem-mcp/portainer-mcp/mnemosyne-mcp/
+  plex-companion this pass), runs before bearer auth (the cheaper,
   no-crypto check first) and before session dispatch (previously an
   unknown session's 404 could win over a disallowed host's rejection,
   since the SDK's check only engaged inside an existing transport), and
-  uses URL-authority parsing so bracketed IPv6 like `[::1]` works. A
-  `host:port` allowlist entry still matches — the port is ignored — so an
-  already-deployed value keeps working without an env change.
+  uses URL-authority parsing so bracketed IPv6 like `[::1]` works. This
+  also means a present `Origin` header is now consulted — it must
+  independently match the allowlist, closing a DNS-rebinding gap this
+  route had no check for at all — and `MCP_ALLOWED_HOSTS` is validated
+  strictly at startup: a `host:port` entry, a scheme, or a wildcard now
+  throws immediately with a clear message instead of being silently
+  tolerated (a bare-port entry never matched a real request's Host header
+  anyway, so nothing that previously worked stops working). Unset now
+  falls back to the shared safe default
+  (`localhost,127.0.0.1,[::1],host.docker.internal`) instead of disabling
+  the check outright.
 - **Package renamed to `@carldog/downloader-mcp`.** The unscoped name
   `downloader-mcp` was still free, but three fleet repos had already lost
   theirs to unrelated packages; a scope is reserved to the account, so no

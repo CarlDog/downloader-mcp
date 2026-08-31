@@ -1,5 +1,5 @@
-// The Streamable HTTP `/mcp` route: Host allowlist, bearer auth, per-session
-// transport map, idle-session sweep, and session dispatch.
+// The Streamable HTTP `/mcp` route: Host/Origin allowlist, bearer auth,
+// per-session transport map, idle-session sweep, and session dispatch.
 //
 // Extracted from index.ts purely to create a test seam. index.ts self-executes
 // on import — it either starts a listener or connects stdio at module scope,
@@ -12,51 +12,28 @@
 // Still NOT sharing the fleet-canonical src/shared/http-transport.ts wholesale
 // (this route keeps JSON-RPC error envelopes on every rejection, not the
 // shared module's bare `{ error }` body — a real response-shape difference).
-// Host checking, however, is now hand-rolled middleware here instead of being
-// delegated to the SDK transport's `enableDnsRebindingProtection`: the SDK
-// (1.30.0) does an exact match on the full raw `Host` header including the
-// port (`_allowedHosts.includes(hostHeader)`, see
-// node_modules/@modelcontextprotocol/sdk .../webStandardStreamableHttp.js),
-// so a bare hostname entry could never match a real `host:port` request — the
-// same bug Botify's 2026-08-30 fix closed by moving off the SDK's check
-// entirely. Host matching is now hostname-only and port-independent, via the
-// same URL-authority parser plex-mcp and plex-companion use, and runs before
-// bearer auth (the cheaper, no-crypto check first — Botify precedent).
+// Host/Origin *matching*, however, now delegates to the fleet-canonical
+// src/shared/mcp-environment.ts (requestAuthorityAllowed) — the same module
+// ported into kindroid-mcp/servarr-mcp/filesystem-mcp/portainer-mcp/
+// mnemosyne-mcp/plex-companion this pass — instead of either the SDK's
+// `enableDnsRebindingProtection` (which does an exact match on the full raw
+// `Host` header including the port, so a bare hostname entry could never
+// match a real `host:port` request — the same bug Botify's 2026-08-30 fix
+// closed) or this route's own prior hand-rolled Host-only check. Delegating
+// also means Origin is now consulted: a present Origin header must
+// independently match the allowlist too, closing a DNS-rebinding gap this
+// route never had a check for at all. Host+Origin runs before bearer auth
+// (the cheaper, no-crypto check first — Botify precedent).
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Express, Request, Response } from "express";
-
-/**
- * Extract the hostname portion of a `Host`-header-style authority string,
- * independent of any port suffix. Uses URL parsing (not a colon-split) so
- * bracketed IPv6 (`[::1]:3009`) resolves to `[::1]`, not the mangled `[` a
- * naive split produces — see plex-companion's 2026-08-30 IPv6 fix, which this
- * mirrors. Returns undefined for anything that isn't a bare authority (a
- * userinfo, path, query, or fragment component means the header was not a
- * plain host[:port] value).
- */
-export function hostnameFromAuthority(
-  value: string | undefined,
-): string | undefined {
-  try {
-    const authority = new URL(`http://${value ?? ""}`);
-    if (
-      authority.username ||
-      authority.password ||
-      authority.pathname !== "/" ||
-      authority.search ||
-      authority.hash
-    ) {
-      return undefined;
-    }
-    return authority.hostname.toLowerCase();
-  } catch {
-    return undefined;
-  }
-}
+import {
+  parseAllowedHosts,
+  requestAuthorityAllowed,
+} from "./shared/mcp-environment.js";
 
 export interface McpRouteOptions {
   /**
@@ -74,12 +51,15 @@ export interface McpRouteOptions {
    */
   authToken?: string | undefined;
   /**
-   * `Host` header hostnames accepted, matched case-insensitively and
+   * Bare `Host`/`Origin` hostnames accepted, matched case-insensitively and
    * independent of port (e.g. `your-nas`; bracketed IPv6 like `[::1]` is
-   * supported). A `host:port` entry also works — the port is ignored — so an
-   * old-style deployed value keeps matching unchanged. Enforced by hand-rolled
-   * middleware ahead of bearer auth and session dispatch. Empty leaves the
-   * protection off (fail-soft, warned at startup).
+   * supported). A present `Origin` header must independently match too — it
+   * cannot rescue a disallowed `Host`, nor vice versa. Checked ahead of
+   * bearer auth and session dispatch via the shared
+   * `requestAuthorityAllowed()`. `undefined` falls back to the shared safe
+   * default (`localhost,127.0.0.1,[::1],host.docker.internal`) — there is no
+   * "open" setting; `requestAuthorityAllowed()` treats an empty list as
+   * reject-everything, not allow-everything.
    */
   allowedHosts?: string[] | undefined;
   sessionIdleMs: number;
@@ -100,18 +80,14 @@ export function mountMcpRoute(
 ): { dispose: () => Promise<void> } {
   const transports: Record<string, StreamableHTTPServerTransport> = {};
   const lastActivity: Record<string, number> = {};
-  // Normalized once at mount time, not per-request: strips a port suffix off
-  // each configured entry too, so a deployed value that still says
-  // `your-nas:3003` (the pre-alignment format) keeps matching without an env
-  // change.
-  const normalizedAllowedHosts = (opts.allowedHosts ?? []).map(
-    (h) => hostnameFromAuthority(h) ?? h.toLowerCase(),
-  );
+  const allowedHosts = opts.allowedHosts ?? parseAllowedHosts(undefined);
 
   function isHostAllowed(req: Request): boolean {
-    if (normalizedAllowedHosts.length === 0) return true; // not configured: open
-    const host = hostnameFromAuthority(req.headers.host);
-    return host !== undefined && normalizedAllowedHosts.includes(host);
+    const headers: { host?: string; origin?: string } = {};
+    if (typeof req.headers.host === "string") headers.host = req.headers.host;
+    if (typeof req.headers.origin === "string")
+      headers.origin = req.headers.origin;
+    return requestAuthorityAllowed(headers, allowedHosts);
   }
 
   function isAuthorized(req: Request): boolean {

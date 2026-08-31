@@ -16,21 +16,19 @@
 //
 // Ported from the fleet-canonical src/shared/http-transport.test.ts, adapted
 // to downloader-mcp's own contract: JSON-RPC error envelopes on every
-// rejection (not the shared module's bare `{ error }`). Host matching itself
-// (hostname-only, port-independent, bracketed-IPv6-aware, checked before auth
-// and before session dispatch) now uses the same URL-authority parser as the
-// rest of the fleet — see hostnameFromAuthority in ./mcp-route.ts.
+// rejection (not the shared module's bare `{ error }`). Host/Origin matching
+// itself (hostname-only, port-independent, bracketed-IPv6-aware, Origin
+// required to independently match when present, checked before auth and
+// before session dispatch) delegates to the fleet-canonical
+// src/shared/mcp-environment.ts — see mcp-environment.test.ts for the parser
+// unit tests; this file covers the route's wiring of it.
 
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, test } from "vitest";
-import {
-  hostnameFromAuthority,
-  mountMcpRoute,
-  type McpRouteOptions,
-} from "./mcp-route.js";
+import { mountMcpRoute, type McpRouteOptions } from "./mcp-route.js";
 
 const ACCEPT = "application/json, text/event-stream";
 const UNKNOWN_SESSION = "00000000-0000-0000-0000-000000000000";
@@ -237,14 +235,6 @@ describe("hardening is unchanged", () => {
     expect(await initialize(url)).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
-  test("a host:port allowlist entry still matches — the port is ignored", async () => {
-    // Migration compatibility: a stack env not yet updated to the port-less
-    // canonical form must keep working unchanged. 9999 deliberately does NOT
-    // match the real ephemeral listen port, to prove it plays no role.
-    const { url } = await start({ allowedHosts: ["127.0.0.1:9999"] });
-    expect(await initialize(url)).toMatch(/^[0-9a-f-]{36}$/i);
-  });
-
   test("host check happens before session handling", async () => {
     // An unknown session must not leak its 404 to a disallowed host — the
     // 403 must win. This inverts the pre-alignment behavior, where the Host
@@ -276,9 +266,18 @@ describe("hardening is unchanged", () => {
     await res.body?.cancel();
   });
 
-  test("hostnameFromAuthority parses a bracketed IPv6 host independently of its port", () => {
-    expect(hostnameFromAuthority("[::1]:3003")).toBe("[::1]");
-    expect(hostnameFromAuthority("your-nas:3003")).toBe("your-nas");
-    expect(hostnameFromAuthority("your-nas")).toBe("your-nas");
+  test("a present Origin must also match, even when Host is allowed", async () => {
+    const { url } = await start({ allowedHosts: ["127.0.0.1"] });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: ACCEPT,
+        origin: "http://evil.example",
+      },
+      body: JSON.stringify(INIT_BODY),
+    });
+    expect(res.status).toBe(403);
+    await res.body?.cancel();
   });
 });

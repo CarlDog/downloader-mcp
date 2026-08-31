@@ -63,12 +63,12 @@ auth and DNS-rebinding protection with:
 | Env var | Meaning |
 | --- | --- |
 | `MCP_AUTH_TOKEN` | Shared secret. When set, every `/mcp` request must carry `Authorization: Bearer <token>`; `/health` stays open for the docker healthcheck. |
-| `MCP_ALLOWED_HOSTS` | Comma-separated bare hostnames (port-independent; a `host:port` entry also still matches). When set, requests whose `Host` header isn't in the list are rejected. |
+| `MCP_ALLOWED_HOSTS` | Comma-separated bare-hostname Host/Origin allowlist (DNS-rebinding defense; port-independent, bracketed IPv6 like `[::1]` supported). A present `Origin` header must independently match too. A `host:port` entry, scheme, or wildcard now throws at startup. Unset falls back to `localhost,127.0.0.1,[::1],host.docker.internal` (safe default, not open). |
 
-The provided Compose deployment requires both controls so a missing stack
-variable cannot silently expose the MCP endpoint. A direct HTTP-mode start
-outside Compose remains backward compatible: if either variable is unset, the
-server logs a startup warning and leaves that control disabled.
+The provided Compose deployment requires `MCP_ALLOWED_HOSTS` so a missing
+stack variable cannot silently expose the MCP endpoint to whatever the safe
+default admits. `MCP_AUTH_TOKEN` stays optional even in Compose: if unset,
+the server logs a startup warning and leaves `/mcp` unauthenticated.
 
 Recommended `MCP_AUTH_TOKEN`: a random secret, e.g. `openssl rand -hex 32`,
 passed by clients as `Authorization: Bearer <token>`.
@@ -76,8 +76,8 @@ passed by clients as `Authorization: Bearer <token>`.
 Recommended `MCP_ALLOWED_HOSTS`: the host names/IPs clients actually use to
 reach the server — fleet-canonical form is
 `MCP_ALLOWED_HOSTS=localhost,127.0.0.1,[::1],192.168.1.50,host.docker.internal`
-(bare hostnames; ports are ignored if included, so a mapped `HOST_PORT`
-doesn't need to appear here).
+(bare hostnames only — a mapped `HOST_PORT` doesn't need to appear here, and
+a `host:port` entry is now rejected at startup rather than silently ignored).
 
 ## Run with Docker
 

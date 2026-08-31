@@ -6,6 +6,7 @@ import { mountMcpRoute } from "./mcp-route.js";
 import { SERVER_VERSION } from "./version.js";
 import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
 import { QBittorrentClient, registerQbittorrentTools } from "./qbittorrent.js";
+import { parseAllowedHosts } from "./shared/mcp-environment.js";
 
 const sabUrl = process.env.SABNZBD_URL;
 const sabKey = process.env.SABNZBD_API_KEY;
@@ -75,18 +76,15 @@ if (portStr && (port === null || Number.isNaN(port))) {
   process.exit(1);
 }
 
-// DNS-rebinding protection (opt-in, fail-soft). When MCP_ALLOWED_HOSTS is
-// set (comma-separated bare hostnames — a host:port entry also works, the
-// port is ignored), the HTTP transport validates the Host header against it,
-// hostname-only and port-independent. When unset, behavior is unchanged so
-// existing LAN deployments keep working — but we warn at startup.
-const allowedHostsStr = process.env.MCP_ALLOWED_HOSTS;
-const allowedHosts = allowedHostsStr
-  ? allowedHostsStr
-      .split(",")
-      .map((h) => h.trim())
-      .filter((h) => h.length > 0)
-  : [];
+// DNS-rebinding protection. MCP_ALLOWED_HOSTS is comma-separated bare
+// hostnames (hostname-only and port-independent matching; a present Origin
+// header must independently match too). Malformed entries (a host:port
+// authority, a scheme, a wildcard) throw at startup rather than silently
+// admitting a value that can never match anything. Unset falls back to the
+// safe default (localhost,127.0.0.1,[::1],host.docker.internal) — there is
+// no "disabled" state anymore, only "open to whatever a real deployment
+// needs, or the safe default."
+const allowedHosts = parseAllowedHosts(process.env.MCP_ALLOWED_HOSTS);
 
 // Optional shared secret for /mcp (opt-in, fail-soft, same posture as
 // MCP_ALLOWED_HOSTS above). When set, every /mcp request must carry
@@ -96,13 +94,13 @@ const authToken = process.env.MCP_AUTH_TOKEN || undefined;
 
 if (port) {
   // HTTP transport (long-lived server, e.g. for Portainer/Compose deployment).
-  if (allowedHosts.length > 0) {
+  if (process.env.MCP_ALLOWED_HOSTS) {
     console.error(
       `downloader-mcp: DNS-rebinding protection enabled (allowed hosts: ${allowedHosts.join(", ")})`,
     );
   } else {
     console.error(
-      "downloader-mcp: MCP_ALLOWED_HOSTS not set — DNS-rebinding protection disabled. " +
+      `downloader-mcp: MCP_ALLOWED_HOSTS not set — falling back to the safe default (${allowedHosts.join(", ")}), which rejects a real LAN client. ` +
         "Recommended: set it to the host names/IPs clients use (e.g. the NAS IP, host.docker.internal).",
     );
   }
