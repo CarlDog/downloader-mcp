@@ -23,7 +23,7 @@ after the fact.
   checking now delegates to the fleet-canonical `src/shared/
   mcp-environment.ts` (`requestAuthorityAllowed`, the same module ported
   into kindroid-mcp/servarr-mcp/filesystem-mcp/portainer-mcp/mnemosyne-mcp/
-  plex-companion this pass), runs before bearer auth (the cheaper,
+  watch-companion this pass), runs before bearer auth (the cheaper,
   no-crypto check first) and before session dispatch (previously an
   unknown session's 404 could win over a disallowed host's rejection,
   since the SDK's check only engaged inside an existing transport), and

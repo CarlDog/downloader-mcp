@@ -15,7 +15,7 @@
 // Host/Origin *matching*, however, now delegates to the fleet-canonical
 // src/shared/mcp-environment.ts (requestAuthorityAllowed) — the same module
 // ported into kindroid-mcp/servarr-mcp/filesystem-mcp/portainer-mcp/
-// mnemosyne-mcp/plex-companion this pass — instead of either the SDK's
+// mnemosyne-mcp/watch-companion this pass — instead of either the SDK's
 // `enableDnsRebindingProtection` (which does an exact match on the full raw
 // `Host` header including the port, so a bare hostname entry could never
 // match a real `host:port` request — the same bug Botify's 2026-08-30 fix
