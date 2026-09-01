@@ -16,6 +16,7 @@ on:
       - ".gitattributes"
       - ".githooks/**"
       - ".gitleaks.toml"
+      - ".github/dependabot.yml"
   pull_request:
     branches: [main]
 
