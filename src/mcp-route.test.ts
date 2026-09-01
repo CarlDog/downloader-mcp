@@ -23,10 +23,10 @@
 // src/shared/mcp-environment.ts — see mcp-environment.test.ts for the parser
 // unit tests; this file covers the route's wiring of it.
 
-import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
-import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import express from "express";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { mountMcpRoute, type McpRouteOptions } from "./mcp-route.js";
 
@@ -61,6 +61,7 @@ async function start(opts: Partial<McpRouteOptions> = {}): Promise<Harness> {
     createServer: () =>
       new McpServer({ name: "mcp-route-test", version: "0.0.0" }),
     sessionIdleMs: 60_000,
+    rateLimitMaxRequests: 60,
     ...opts,
   });
 
@@ -170,6 +171,20 @@ describe("session lifecycle", () => {
 });
 
 describe("hardening is unchanged", () => {
+  test("requests above the per-client limit answer 429 before authorization", async () => {
+    const { url } = await start({ rateLimitMaxRequests: 1 });
+    await initialize(url);
+
+    const res = await callWithSession(url, UNKNOWN_SESSION);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBeTruthy();
+    expect(await res.json()).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "Too many requests" },
+      id: null,
+    });
+  });
+
   test("missing or wrong bearer token answers 401", async () => {
     const { url } = await start({ authToken: "correct-horse" });
 

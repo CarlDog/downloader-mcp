@@ -25,11 +25,11 @@
 // route never had a check for at all. Host+Origin runs before bearer auth
 // (the cheaper, no-crypto check first — Botify precedent).
 
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Express, Request, Response } from "express";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   parseAllowedHosts,
   requestAuthorityAllowed,
@@ -63,6 +63,8 @@ export interface McpRouteOptions {
    */
   allowedHosts?: string[] | undefined;
   sessionIdleMs: number;
+  /** Maximum requests per client in a 60-second window. */
+  rateLimitMaxRequests: number;
   /** Sweep cadence. Defaults to 5 minutes. */
   sweepIntervalMs?: number;
 }
@@ -80,6 +82,10 @@ export function mountMcpRoute(
 ): { dispose: () => Promise<void> } {
   const transports: Record<string, StreamableHTTPServerTransport> = {};
   const lastActivity: Record<string, number> = {};
+  const rateLimitWindows = new Map<
+    string,
+    { count: number; resetAt: number }
+  >();
   const allowedHosts = opts.allowedHosts ?? parseAllowedHosts(undefined);
 
   function isHostAllowed(req: Request): boolean {
@@ -104,13 +110,32 @@ export function mountMcpRoute(
     return timingSafeEqual(a, b);
   }
 
+  function isRateLimited(req: Request): number | undefined {
+    const client = req.socket.remoteAddress ?? "unknown";
+    const now = Date.now();
+    const current = rateLimitWindows.get(client);
+    const window =
+      !current || current.resetAt <= now
+        ? { count: 0, resetAt: now + 60_000 }
+        : current;
+    window.count += 1;
+    rateLimitWindows.set(client, window);
+    return window.count > opts.rateLimitMaxRequests
+      ? Math.ceil((window.resetAt - now) / 1_000)
+      : undefined;
+  }
+
   // Idle-session eviction: clients that abandon a session without
   // DELETE /mcp would otherwise leave their transport + McpServer
   // resident forever. Sweep periodically and close idle sessions;
   // transport.onclose handles the map cleanup.
   const sweepIntervalMs = opts.sweepIntervalMs ?? 5 * 60 * 1000;
   const sweep = setInterval(() => {
-    const cutoff = Date.now() - opts.sessionIdleMs;
+    const now = Date.now();
+    const cutoff = now - opts.sessionIdleMs;
+    for (const [client, window] of rateLimitWindows) {
+      if (window.resetAt <= now) rateLimitWindows.delete(client);
+    }
     for (const [id, seen] of Object.entries(lastActivity)) {
       if (seen < cutoff) {
         console.error(`downloader-mcp: evicting idle session ${id}`);
@@ -135,6 +160,16 @@ export function mountMcpRoute(
       res.status(403).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Forbidden: host not allowed" },
+        id: null,
+      });
+      return;
+    }
+    const retryAfter = isRateLimited(req);
+    if (retryAfter !== undefined) {
+      res.setHeader("Retry-After", retryAfter);
+      res.status(429).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Too many requests" },
         id: null,
       });
       return;

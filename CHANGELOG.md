@@ -14,6 +14,13 @@ after the fact.
 
 ### Changed
 
+- **Rate-limited the HTTP MCP route before authentication and session
+  allocation.** Each client IP receives 60 requests per 60-second window by
+  default; excess requests return `429` with `Retry-After`. Expired entries are
+  pruned by the existing session sweep, and `MCP_RATE_LIMIT_MAX_REQUESTS` is a
+  validated 1-600 operator override. This protects the write-capable HTTP
+  surface without changing stdio behavior.
+
 - **`MCP_ALLOWED_HOSTS` matching is now hostname-only and port-independent,
   aligned with the rest of the fleet.** Host checking was previously
   delegated to the MCP SDK transport's `enableDnsRebindingProtection`,

@@ -3,10 +3,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import express, { type Request, type Response } from "express";
 import { mountMcpRoute } from "./mcp-route.js";
-import { SERVER_VERSION } from "./version.js";
-import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
 import { QBittorrentClient, registerQbittorrentTools } from "./qbittorrent.js";
-import { parseAllowedHosts } from "./shared/mcp-environment.js";
+import { SabnzbdClient, registerSabnzbdTools } from "./sabnzbd.js";
+import {
+  parseAllowedHosts,
+  parsePositiveInteger,
+} from "./shared/mcp-environment.js";
+import { SERVER_VERSION } from "./version.js";
 
 const sabUrl = process.env.SABNZBD_URL;
 const sabKey = process.env.SABNZBD_API_KEY;
@@ -125,12 +128,19 @@ if (port) {
   const sessionIdleMs =
     Number.parseInt(process.env.MCP_SESSION_IDLE_MS ?? "", 10) ||
     30 * 60 * 1000;
+  const rateLimitMaxRequests = parsePositiveInteger(
+    "MCP_RATE_LIMIT_MAX_REQUESTS",
+    process.env.MCP_RATE_LIMIT_MAX_REQUESTS,
+    60,
+    600,
+  );
 
   mountMcpRoute(httpApp, "/mcp", {
     createServer,
     authToken,
     allowedHosts,
     sessionIdleMs,
+    rateLimitMaxRequests,
   });
 
   httpApp.get("/health", (_req: Request, res: Response) => {

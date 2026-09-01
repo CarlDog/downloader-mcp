@@ -28,6 +28,7 @@ services:
       # in source with nothing for compose to expose (docker-deployments.md
       # §10); now env-tunable from Portainer without a rebuild.
       MCP_SESSION_IDLE_MS: "${MCP_SESSION_IDLE_MS:-1800000}"
+      MCP_RATE_LIMIT_MAX_REQUESTS: "${MCP_RATE_LIMIT_MAX_REQUESTS:-60}"
       SABNZBD_URL: "${SABNZBD_URL:-}"
       SABNZBD_API_KEY: "${SABNZBD_API_KEY:-}"
       QBITTORRENT_URL: "${QBITTORRENT_URL:-}"

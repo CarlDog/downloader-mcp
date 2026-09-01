@@ -1,6 +1,12 @@
 # Status
 
-**Last updated:** 2026-08-28 — **released v0.1.0**, this repo's first tagged
+**Last updated:** 2026-09-01 — rate-limited the HTTP `/mcp` route before bearer
+authorization and session allocation. Each client IP receives 60 requests per
+60-second window by default, returning `429` and `Retry-After` when exceeded;
+expired client windows are pruned by the existing session sweep. Compose now
+exposes the validated 1-600 `MCP_RATE_LIMIT_MAX_REQUESTS` override. Focused
+route tests pass; stdio behavior is unchanged.
+Previous entry, 2026-08-28 — **released v0.1.0**, this repo's first tagged
 release, under the new fleet standard UNI-19. Adds the backfilled
 `CHANGELOG.md` UNI-12 requires, sets `flavor: latest=false` on the publish
 workflow so a release tag no longer republishes `:latest` and bounces the live
